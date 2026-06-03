@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin maintenance</span>
+    <h1>Maintenance center</h1>
+    <p>Check backups, migration status, logs, and deployment readiness from one operational page.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Backups</span><strong>{{ backups|length }}</strong></div>
+    <div class="stat-card"><span>Migration</span><strong>{{ "Current" if migration_current else "Check" }}</strong></div>
+    <div class="stat-card"><span>Log Size</span><strong>{{ (log_size / 1024)|round(1) }} KB</strong></div>
+    <a class="stat-card stat-link" href="/admin/system-status"><span>Health</span><strong>View</strong></a>
+</section>
+
+<section class="portal-help-strip compact mb-4">
+    <div>
+        <strong>Maintenance actions</strong>
+        <span>Create a local backup or clean older backup files. Production PostgreSQL should also use host-managed backups.</span>
+    </div>
+    <div class="portal-actions">
+        <form method="POST" action="/admin/backups/create">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-light btn-sm">Create Backup</button>
+        </form>
+        <form method="POST" action="/admin/backups/cleanup">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="keep" value="10">
+            <button class="btn btn-light btn-sm">Keep Latest 10</button>
+        </form>
+    </div>
+</section>
+
+<section class="row g-4">
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Deploy checks</h2>
+            <div class="clean-list">
+                {% for label, ready in deploy_items %}
+                <div><strong>{{ label }}</strong><span>{{ "Ready" if ready else "Needs setup" }}</span></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Local files</h2>
+            <div class="clean-list">
+                <div><strong>Latest backup</strong><span>{{ latest_backup.name if latest_backup else "No backups yet" }}</span></div>
+                <div><strong>Migration version</strong><span>{{ migration_version }}</span></div>
+                <div><strong>Latest migration</strong><span>{{ latest_revision }}</span></div>
+                <div><strong>Log file</strong><span>{{ log_path }}</span></div>
+            </div>
+            <div class="portal-actions mt-3">
+                <a class="btn btn-outline-primary btn-sm" href="/admin/logs">View Logs</a>
+                <a class="btn btn-outline-primary btn-sm" href="/admin/retention">Retention</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+

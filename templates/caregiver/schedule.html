@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Caregiver portal</span>
+    <h1>Caregiver schedule</h1>
+    <p>View assigned visits, review task prompts, save observations, and complete visits.</p>
+</div>
+
+<section class="content-card mb-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Assigned visits</span>
+            <h2 class="h4 mb-0">Find the right visit fast</h2>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search client, address, service, status" data-card-search="caregiverScheduleCards">
+    </div>
+    <div class="portal-help-strip compact">
+        <div>
+            <strong>Before you mark complete</strong>
+            <span>Save useful observations so the office and family can follow what happened.</span>
+        </div>
+        <a class="btn btn-light btn-sm" href="tel:3013262225">Call Office</a>
+    </div>
+</section>
+
+<section class="visit-card-list" id="caregiverScheduleCards">
+    {% for a in appointments %}
+
+    <div class="visit-card polished-visit-card portal-task-card" data-search-card>
+
+        <div class="visit-card-header">
+
+            <strong>Appointment #{{ a.id }}</strong>
+
+            {% if a.status == "assigned" %}
+                <span class="status-pill status-assigned">
+                    Assigned
+                </span>
+
+            {% elif a.status == "completed" %}
+                <span class="status-pill status-completed">
+                    Completed
+                </span>
+
+            {% elif a.status == "approved" %}
+                <span class="status-pill status-approved">
+                    Approved
+                </span>
+
+            {% else %}
+                <span class="status-pill status-{{ a.status }}">
+                    {{ a.status }}
+                </span>
+            {% endif %}
+
+        </div>
+
+        <div class="visit-card-body">
+
+            <div class="row">
+
+                <div class="col-md-6">
+                    <p><strong>Date:</strong> {{ a.date }}</p>
+                    <p><strong>Time:</strong> {{ a.time }}</p>
+                    <p><strong>Client:</strong> {{ a.client.name if a.client else "Client not linked" }}</p>
+                    <p><strong>Address:</strong> {{ a.service_address or (a.client.address if a.client else "Not added") }}</p>
+                </div>
+
+                <div class="col-md-6">
+                    <p><strong>Service:</strong> {{ a.service_type }}</p>
+                    <p><strong>Language:</strong> {{ a.preferred_language or "English" }}</p>
+                    <p><strong>Emergency Contact:</strong> {{ a.emergency_contact or (a.client.emergency_contact_name if a.client else "Ask office") }}</p>
+                    <p><strong>Client Notes:</strong> {{ a.notes or "No client notes provided." }}</p>
+                </div>
+
+            </div>
+
+            {% if a.mobility_needs or a.schedule_preference %}
+            <div class="task-meta mb-3">
+                {% if a.mobility_needs %}
+                <span><strong>Mobility or safety:</strong> {{ a.mobility_needs }}</span>
+                {% endif %}
+                {% if a.schedule_preference %}
+                <span><strong>Schedule preference:</strong> {{ a.schedule_preference }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="task-checklist">
+                <span>Visit task prompts</span>
+                <label><input type="checkbox"> Greet client respectfully and confirm comfort.</label>
+                <label><input type="checkbox"> Follow hygiene expectations and stay focused during care time.</label>
+                <label><input type="checkbox"> Support requested routine tasks within non-medical scope.</label>
+                <label><input type="checkbox"> Save observations for admin and family follow-up.</label>
+            </div>
+
+            {% if a.status != "completed" %}
+
+            <form method="POST" action="/caregiver/appointment/{{ a.id }}/notes" class="mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="form-label">Caregiver Observations / Visit Notes</label>
+                <textarea name="caregiver_notes" class="form-control mb-2" rows="3">{{ a.caregiver_notes or "" }}</textarea>
+                <button class="btn btn-outline-primary btn-sm">Save Notes</button>
+            </form>
+
+            <form method="POST" action="/caregiver/appointment/{{ a.id }}/complete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="caregiver_notes" value="{{ a.caregiver_notes or '' }}">
+                <button class="btn btn-success btn-sm">Mark Visit Complete</button>
+            </form>
+
+            {% else %}
+
+            <button class="btn btn-secondary btn-sm" disabled>
+                Visit Completed
+            </button>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    {% else %}
+
+    <div class="empty-state">
+        No appointments assigned yet. New assigned visits will appear here with task prompts and note fields.
+    </div>
+
+    {% endfor %}
+</section>
+
+{% endblock %}
+
+

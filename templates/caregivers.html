@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Caregivers | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Learn about Ables Home Healthcare caregiver screening, training, matching, professionalism standards, and family follow-up.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero about-hero">
+    <span class="eyebrow">Caregiver trust</span>
+    <h1>Families deserve confidence in who enters the home.</h1>
+    <p>Caregiver quality is not only about tasks. It is about respect, focus, hygiene, and follow-through.</p>
+</div>
+
+<section class="row g-4">
+    {% for item in caregiver_promises %}
+    <div class="col-md-6">
+        <div class="content-card h-100">
+            <h2>{{ item.title }}</h2>
+            <p>{{ item.body }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="content-band mt-5">
+    <div class="section-heading">
+        <span class="eyebrow">Our Caregivers Have</span>
+        <h2>Screened, Qualified, And Ready To Support Families.</h2>
+    </div>
+    <ul class="check-list">
+        <li>Maryland Board of Nursing Licenses</li>
+        <li>CPR &amp; First Aid Certifications</li>
+        <li>Gone Through Criminal Background Checks &amp; They Are Clean</li>
+        <li>Been Screened For TB With Negative Results</li>
+        <li>References That Have Been Checked</li>
+    </ul>
+</section>
+
+<section class="content-band mt-5">
+    <div class="section-heading">
+        <span class="eyebrow">Professional standards</span>
+        <h2>What respectful care should look like.</h2>
+    </div>
+    <div class="standards-grid">
+        {% for standard in standards %}
+        <div class="standard-card">
+            <span>{{ loop.index }}</span>
+            <p>{{ standard }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}
+
+

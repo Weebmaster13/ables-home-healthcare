@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin work queue</span>
+    <h1>Work that needs attention</h1>
+    <p>One task-focused view for new inquiries, referrals, care plans, appointments, caregiver applications, and portal messages.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Total Open</span><strong>{{ total_open }}</strong></div>
+    <div class="stat-card"><span>Inquiries</span><strong>{{ queues.new_inquiries|length }}</strong></div>
+    <div class="stat-card"><span>Referrals</span><strong>{{ queues.new_referrals|length }}</strong></div>
+    <div class="stat-card"><span>Care Plans</span><strong>{{ queues.care_plans|length }}</strong></div>
+    <div class="stat-card"><span>Appointments</span><strong>{{ queues.pending_appointments|length }}</strong></div>
+    <div class="stat-card"><span>Applications</span><strong>{{ queues.applications|length }}</strong></div>
+    <div class="stat-card"><span>Messages</span><strong>{{ queues.messages|length }}</strong></div>
+</section>
+
+{% if queues.urgent_appointments %}
+<section class="content-card mb-4">
+    <span class="eyebrow">Urgent language detected</span>
+    <h2 class="h4">Care requests needing quick review</h2>
+    <div class="clean-list">
+        {% for item in queues.urgent_appointments %}
+        <div>
+            <strong>{{ item.client.name if item.client else "Unknown client" }} | {{ item.date }} {{ item.time }}</strong>
+            <span>{{ item.service_type }} | Reason: {{ item.urgent_reason }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<section class="content-card mb-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Appointment reminders</span>
+            <h2 class="h4 mb-0">Visits to watch</h2>
+        </div>
+        <div class="portal-actions">
+            <a class="btn btn-outline-primary btn-sm" href="/admin/schedule">Schedule Board</a>
+            <a class="btn btn-outline-primary btn-sm" href="/admin/appointments">Manage Appointments</a>
+        </div>
+    </div>
+    <div class="portal-reminder-grid">
+        <div><strong>Today</strong><span>{{ reminders.today|length }}</span></div>
+        <div><strong>Tomorrow</strong><span>{{ reminders.tomorrow|length }}</span></div>
+        <div><strong>Overdue follow-up</strong><span>{{ reminders.overdue|length }}</span></div>
+    </div>
+</section>
+
+<section class="queue-grid">
+    <article class="content-card">
+        <h2 class="h4">New inquiries</h2>
+        <div class="queue-list">
+            {% for item in queues.new_inquiries %}
+            <div>
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.reason }} | {{ item.phone or item.email }} | {{ item.status }}</span>
+                <a href="/admin/inquiries">Review inquiry</a>
+            </div>
+            {% else %}
+            <div class="empty-state">No open inquiries.</div>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="content-card">
+        <h2 class="h4">New referrals</h2>
+        <div class="queue-list">
+            {% for item in queues.new_referrals %}
+            <div>
+                <strong>{{ item.client_name }}</strong>
+                <span>{{ item.care_needed }} | {{ item.client_phone or item.source_phone }} | {{ item.status }}</span>
+                <a href="/admin/inquiries">Review referral</a>
+            </div>
+            {% else %}
+            <div class="empty-state">No open referrals.</div>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="content-card">
+        <h2 class="h4">Care plans</h2>
+        <div class="queue-list">
+            {% for item in queues.care_plans %}
+            <div>
+                <strong>{{ item.client_name }}</strong>
+                <span>{{ item.service_type }} | {{ item.schedule }} | {{ item.status }}</span>
+                <a href="/admin/care-plans">Update care plan</a>
+            </div>
+            {% else %}
+            <div class="empty-state">No care plans waiting.</div>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="content-card">
+        <h2 class="h4">Appointments</h2>
+        <div class="queue-list">
+            {% for item in queues.pending_appointments %}
+            <div>
+                <strong>{{ item.client.name if item.client else "Unknown client" }}</strong>
+                <span>{{ item.service_type }} | {{ item.date }} {{ item.time }} | {{ item.status }}</span>
+                <a href="/admin/appointments">Manage appointment</a>
+            </div>
+            {% else %}
+            <div class="empty-state">No appointments waiting.</div>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="content-card">
+        <h2 class="h4">Caregiver applications</h2>
+        <div class="queue-list">
+            {% for item in queues.applications %}
+            <div>
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.phone }} | {{ item.availability or "Availability not provided" }} | {{ item.status }}</span>
+                <a href="/admin/applications">Screen applicant</a>
+            </div>
+            {% else %}
+            <div class="empty-state">No applications waiting.</div>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="content-card">
+        <h2 class="h4">Portal messages</h2>
+        <div class="queue-list">
+            {% for item in queues.messages %}
+            <div>
+                <strong>{{ item.subject }}</strong>
+                <span>{{ item.sender.name if item.sender else "Unknown" }} | {{ item.topic }} | {{ item.priority }} | {{ item.status }}</span>
+                <a href="/admin/messages">Reply to message</a>
+            </div>
+            {% else %}
+            <div class="empty-state">No portal messages waiting.</div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+{% endblock %}
+

@@ -1,0 +1,22 @@
+{
+    "include": [
+        "."
+    ],
+    "exclude": [
+        ".venv",
+        "__pycache__",
+        "instance",
+        "migrations/versions/__pycache__"
+    ],
+    "venvPath": ".",
+    "venv": ".venv",
+    "extraPaths": [
+        "."
+    ],
+    "typeCheckingMode": "basic",
+    "reportMissingImports": true,
+    "reportCallIssue": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportOptionalOperand": "none",
+    "reportOperatorIssue": "none"
+}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero about-hero">
+    <span class="eyebrow">Getting started</span>
+    <h1>Our care process</h1>
+    <p>A clear step-by-step path from first contact to assigned caregiver support.</p>
+</div>
+
+<section class="process-grid">
+    {% for step in consultation_steps %}
+    <div class="process-step">
+        <span>{{ step.number }}</span>
+        <h2>{{ step.title }}</h2>
+        <p>{{ step.body }}</p>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="mission-card mt-5">
+    <div class="row align-items-center g-3">
+        <div class="col-lg-8">
+            <h2>Ready to talk through care?</h2>
+            <p class="mb-0">Start with a free consultation and receive a non-medical care planning conversation.</p>
+        </div>
+        <div class="col-lg-4 text-lg-end">
+            <a class="btn btn-light" href="/free-consultation">Request Consultation</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

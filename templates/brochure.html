@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Ables Home Healthcare Brochure{% endblock %}
+{% block meta_description %}Download or view the Ables Home Healthcare brochure with service details, contact information, and service areas.{% endblock %}
+
+{% block content %}
+<section class="brochure-strip py-3">
+  <div class="container d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
+    <div class="strip-brand d-flex align-items-center gap-3">
+      <img src="{{ url_for('static', filename='img/brand/ablelogo-strip.jpg') }}" alt="Ables Home Healthcare logo" class="strip-logo">
+      <div>
+        <p class="strip-label mb-1">Ables Home Healthcare</p>
+        <p class="strip-tagline mb-0">Pursuing Excellence | Skilled Nursing & Non-Skilled Nursing Care Provider for infants, children, young and older adults</p>
+      </div>
+    </div>
+    <div class="strip-cta text-md-end">
+      <p class="strip-cta-label mb-1">Call today</p>
+      <a href="tel:3013262225" class="strip-phone">(301) 326-2225</a>
+    </div>
+  </div>
+</section>
+
+<section class="brochure-hero py-5 text-center">
+  <div class="container">
+    <div class="brochure-heading mb-4">
+      <img src="{{ url_for('static', filename='img/brand/ablelogo-mark.jpg') }}" alt="Ables Home Healthcare logo" class="brochure-logo mb-3">
+      <h1>Ables Home Healthcare</h1>
+      <p class="lead text-secondary">Pursuing Excellence</p>
+    </div>
+
+    <p class="brochure-subtitle">Skilled Nursing &amp; Non-Skilled Nursing Care Provider for infants, children, young and older adults.</p>
+
+    <div class="brochure-contact card shadow-sm mx-auto mt-4 p-4" style="max-width: 700px;">
+      <div class="row g-3 align-items-center">
+        <div class="col-md-4 text-md-start">
+          <strong>Contact</strong>
+          <p class="mb-1">(301) 326-2225</p>
+          <p class="mb-0">admin@ableshomehealthcare.com</p>
+        </div>
+        <div class="col-md-4 text-md-start">
+          <strong>Address</strong>
+          <p class="mb-0">11510 Georgia Avenue Suite 230</p>
+          <p class="mb-0">Silver Spring MD 20902</p>
+        </div>
+        <div class="col-md-4 text-md-start">
+          <strong>Licensed</strong>
+          <p class="mb-0">RSA Licensed by Maryland Department of Health. R3114.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="brochure-services py-5">
+  <div class="container">
+    <h2 class="h3 text-center mb-4">Our Services</h2>
+    <div class="row gy-3 service-columns">
+      <div class="col-md-6 col-lg-4">
+        <ul class="list-unstyled brochure-list">
+          <li>Companionship, Geriatric Care</li>
+          <li>Hospice Care, Respite Care</li>
+          <li>Light housekeeping</li>
+          <li>Range of Motion Exercise</li>
+          <li>Accompany to Doctor Appointments</li>
+          <li>Running Errands &amp; Grocery Shopping</li>
+        </ul>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <ul class="list-unstyled brochure-list">
+          <li>Alzheimer Care, Dementia Care</li>
+          <li>Bathing and Grooming</li>
+          <li>Lifting and Transferring</li>
+          <li>Light Meal Preparation &amp; Feeding</li>
+          <li>Personal Laundry and Linen Change</li>
+          <li>Medication Reminders / Administration</li>
+        </ul>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <ul class="list-unstyled brochure-list">
+          <li>IV Therapy &amp; Injections</li>
+          <li>Wound Care / Wound Change</li>
+          <li>Catheter Care / Catheter Change</li>
+          <li>Tube Feeding, Consumer Training</li>
+          <li>Tracheotomy Care, Ventilation Care</li>
+          <li>Assessments – Initial &amp; Follow up</li>
+          <li>Evaluation of Home Environment</li>
+          <li>Family Training, Behavior Consultation</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="brochure-areas py-5 bg-light">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-lg-6">
+        <h2 class="h4">Service Area</h2>
+        <p>Anne Arundel, Baltimore, Calvert, Caroline, Carroll, Charles, Frederick, Harford, Howard, Kent, Montgomery, Prince Georges, Queen Anne's, St. Mary's, Talbot, Counties and Baltimore City.</p>
+      </div>
+      <div class="col-lg-6">
+        <div class="brochure-notice p-4 rounded border bg-white shadow-sm">
+          <p class="mb-1"><strong>Great Professional Service</strong></p>
+          <p class="mb-1"><strong>Compassionate Care</strong></p>
+          <p class="mb-0"><strong>On Time and Reliable Service</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="brochure-footer py-5 text-center">
+  <div class="container">
+    <h2 class="h4 mb-3">Call Today</h2>
+    <p class="mb-4">Call us today for a free consultation and referral support.</p>
+    <a class="btn btn-primary btn-lg" href="tel:3013262225">Call 301-326-2225</a>
+    <a class="btn btn-outline-primary btn-lg ms-3" href="/contact">Contact Us</a>
+  </div>
+</section>
+{% endblock %}
+
+

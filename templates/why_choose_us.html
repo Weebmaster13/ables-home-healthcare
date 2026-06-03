@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Why choose us</span>
+    <h1>Dependable care with a local point of contact</h1>
+    <p>Ables Home Healthcare combines a family-centered care message with practical scheduling and portal tools.</p>
+</div>
+
+<section class="values-grid">
+    {% for point in trust_points %}
+        <div class="value-item">
+            <h2>{{ point.title }}</h2>
+            <p>{{ point.body }}</p>
+        </div>
+    {% endfor %}
+</section>
+
+<section class="content-card mt-4">
+    <h2>A website structure built for growth</h2>
+    <p>
+        Large home-care websites often include service pages, employment pages, referral forms,
+        location pages, articles, FAQs, and care program pages. This version gives Ables Home
+        Healthcare that foundation without copying another brand's website.
+    </p>
+</section>
+
+<section class="testimonial-band mt-5">
+    <div class="section-heading">
+        <span class="eyebrow">What families look for</span>
+        <h2>Trust is built before the first visit.</h2>
+    </div>
+    <div class="row g-4">
+        {% for item in testimonials %}
+        <div class="col-lg-4">
+            <div class="testimonial-card h-100">
+                <p>"{{ item.quote }}"</p>
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.context }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}
+
+

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin notifications</span>
+    <h1>Email and SMS delivery logs</h1>
+    <p>Filter sent, skipped, and failed delivery attempts.</p>
+</div>
+
+<section class="content-card mb-4">
+    <form method="GET" class="admin-search-form">
+        <select name="channel" class="form-select">
+            <option value="">All channels</option>
+            <option value="email" {% if request.args.get('channel') == 'email' %}selected{% endif %}>Email</option>
+            <option value="sms" {% if request.args.get('channel') == 'sms' %}selected{% endif %}>SMS</option>
+        </select>
+        <select name="status" class="form-select">
+            <option value="">All statuses</option>
+            <option value="sent" {% if request.args.get('status') == 'sent' %}selected{% endif %}>Sent</option>
+            <option value="skipped" {% if request.args.get('status') == 'skipped' %}selected{% endif %}>Skipped</option>
+            <option value="failed" {% if request.args.get('status') == 'failed' %}selected{% endif %}>Failed</option>
+        </select>
+        <input class="form-control" type="date" name="date_from" value="{{ request.args.get('date_from', '') }}">
+        <input class="form-control" type="date" name="date_to" value="{{ request.args.get('date_to', '') }}">
+        <button class="btn btn-primary">Filter</button>
+        <a class="btn btn-outline-primary" href="/admin/notifications/export?{{ request.query_string.decode() }}">Export</a>
+    </form>
+</section>
+
+<section class="content-card">
+    <div class="table-responsive">
+        <table class="table align-middle admin-table">
+            <thead><tr><th>Date</th><th>Channel</th><th>Status</th><th>Recipient</th><th>Subject</th><th>Error</th></tr></thead>
+            <tbody>
+                {% for item in logs %}
+                <tr>
+                    <td>{{ item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "" }}</td>
+                    <td>{{ item.channel }}</td>
+                    <td>{{ item.status }}</td>
+                    <td>{{ item.recipient or "" }}</td>
+                    <td>{{ item.subject or "" }}</td>
+                    <td>{{ item.error or "" }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6"><div class="empty-state">No notification logs match these filters.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+

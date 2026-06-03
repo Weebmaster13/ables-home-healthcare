@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Client dashboard</span>
+    <h1>Welcome, {{ user.name }}</h1>
+    <p>See what is happening with care, request help quickly, and keep family details ready for the office team.</p>
+    <form method="POST" action="/auth/logout" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-primary">Log Out</button>
+    </form>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card">
+        <span>Upcoming visits</span>
+        <strong>{{ client_stats.upcoming }}</strong>
+    </div>
+    <div class="stat-card">
+        <span>Pending requests</span>
+        <strong>{{ client_stats.pending }}</strong>
+    </div>
+    <div class="stat-card">
+        <span>Completed visits</span>
+        <strong>{{ client_stats.completed }}</strong>
+    </div>
+    <div class="stat-card">
+        <span>Profile gaps</span>
+        <strong>{{ client_stats.profile_missing }}</strong>
+    </div>
+    <a class="stat-card stat-link" href="/request-care">
+        <span>Fast action</span>
+        <strong>+</strong>
+    </a>
+</section>
+
+<section class="portal-command-grid">
+    <div class="content-card portal-priority-card">
+        <span class="eyebrow">Next best step</span>
+        {% if next_appointment %}
+        <h2 class="h4">Next visit: {{ next_appointment.service_type }}</h2>
+        <p>{{ next_appointment.date }} at {{ next_appointment.time }}{% if next_appointment.caregiver %} with {{ next_appointment.caregiver.name }}{% endif %}</p>
+        <div class="task-meta">
+            <span><strong>Status:</strong> {{ next_appointment.status }}</span>
+            <span><strong>Address:</strong> {{ next_appointment.service_address or user.address or "Add service address" }}</span>
+            <span><strong>Language:</strong> {{ next_appointment.preferred_language or "English" }}</span>
+        </div>
+        {% if next_appointment.caregiver_notes %}
+        <p><strong>Latest caregiver note:</strong> {{ next_appointment.caregiver_notes }}</p>
+        {% endif %}
+        <div class="portal-actions">
+            <a class="btn btn-primary" href="/my-appointments">View Appointment</a>
+            <a class="btn btn-outline-primary" href="/appointment/{{ next_appointment.id }}/edit">Update Details</a>
+        </div>
+        {% else %}
+        <h2 class="h4">Request care when you are ready</h2>
+        <p>No upcoming visit is scheduled yet. Send a request with schedule, address, care notes, and emergency contact details.</p>
+        <div class="portal-actions">
+            <a class="btn btn-primary" href="/request-care">Request Care</a>
+            <a class="btn btn-outline-primary" href="/free-consultation">Become a Client</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="content-card">
+        <span class="eyebrow">Make care easier</span>
+        <h2 class="h4">Family checklist</h2>
+        <div class="portal-checklist">
+            <div class="{% if user.emergency_contact_name and user.emergency_contact_phone %}is-done{% endif %}">
+                <span></span>
+                <p><strong>Emergency contact ready</strong> Add a reachable name and phone number.</p>
+            </div>
+            <div class="{% if user.address %}is-done{% endif %}">
+                <span></span>
+                <p><strong>Service address saved</strong> Keep apartment, entry, and access details current.</p>
+            </div>
+            <div class="{% if user.care_needs %}is-done{% endif %}">
+                <span></span>
+                <p><strong>Care needs written down</strong> Share routines, mobility needs, and safety notes.</p>
+            </div>
+            <div class="{% if appointments %}is-done{% endif %}">
+                <span></span>
+                <p><strong>Care request started</strong> Submit or review appointment requests.</p>
+            </div>
+        </div>
+        <a class="btn btn-outline-primary mt-3" href="/profile">Update Profile</a>
+    </div>
+</section>
+
+<section class="portal-quick-actions mt-4">
+    <a href="/request-care">
+        <strong>Request care</strong>
+        <span>Send schedule, service, and support needs.</span>
+    </a>
+    <a href="/my-appointments">
+        <strong>Appointments</strong>
+        <span>Review status, caregiver, notes, and changes.</span>
+    </a>
+    <a href="tel:3013262225">
+        <strong>Call office</strong>
+        <span>Use the phone for urgent scheduling questions.</span>
+    </a>
+    <a href="/messages">
+        <strong>Message team</strong>
+        <span>Ask billing, service, or general questions.</span>
+    </a>
+    <a href="/documents">
+        <strong>Documents</strong>
+        <span>Upload forms, insurance, and care paperwork.</span>
+    </a>
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Reminders</span>
+            <h2 class="h4 mb-0">Appointments needing attention</h2>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="/my-appointments">All Appointments</a>
+    </div>
+    <div class="portal-reminder-grid">
+        <div>
+            <strong>Today</strong>
+            <span>{{ reminders.today|length }}</span>
+        </div>
+        <div>
+            <strong>Tomorrow</strong>
+            <span>{{ reminders.tomorrow|length }}</span>
+        </div>
+        <div>
+            <strong>Overdue follow-up</strong>
+            <span>{{ reminders.overdue|length }}</span>
+        </div>
+    </div>
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Care timeline</span>
+            <h2 class="h4 mb-0">Appointments and updates</h2>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search visits, status, notes" data-card-search="clientAppointmentCards">
+    </div>
+
+    {% if appointments %}
+    <div class="timeline-list" id="clientAppointmentCards">
+        {% for item in appointments %}
+        <article class="timeline-item portal-task-card" data-search-card>
+            <div class="visit-card-header">
+                <strong>{{ item.service_type }}</strong>
+                <span class="status-pill status-{{ item.status }}">{{ item.status }}</span>
+            </div>
+            <div class="task-meta">
+                <span><strong>When:</strong> {{ item.date }} at {{ item.time }}</span>
+                <span><strong>Caregiver:</strong> {{ item.caregiver.name if item.caregiver else "Waiting for assignment" }}</span>
+                <span><strong>Address:</strong> {{ item.service_address or user.address or "Not added" }}</span>
+            </div>
+            {% if item.notes %}
+            <p><strong>Your care notes:</strong> {{ item.notes }}</p>
+            {% endif %}
+            {% if item.caregiver_notes %}
+            <p><strong>Caregiver note:</strong> {{ item.caregiver_notes }}</p>
+            {% endif %}
+            {% if item.status not in ["completed", "cancelled"] %}
+            <div class="portal-actions">
+                <a class="btn btn-outline-primary btn-sm" href="/appointment/{{ item.id }}/edit">Edit</a>
+                <a class="btn btn-outline-primary btn-sm" href="/my-appointments">More Details</a>
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No appointment requests yet. Start with a care request or Become a Client.</div>
+    {% endif %}
+</section>
+
+<section class="portal-help-strip mt-4">
+    <div>
+        <strong>For emergencies, call 911 first.</strong>
+        <span>For scheduling, billing, or care changes, contact Ables Home Healthcare.</span>
+    </div>
+    <a class="btn btn-light btn-sm" href="tel:3013262225">(301) 326-2225</a>
+</section>
+
+{% endblock %}
+
+
+

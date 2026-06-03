@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero careers-hero">
+    <span class="eyebrow">Admin</span>
+    <h1>Caregiver applications</h1>
+    <p>Review applicant details, availability, certifications, references, and screening status.</p>
+</div>
+
+<section class="content-card">
+    <div class="table-toolbar">
+        <div>
+            <h2 class="h4 mb-1">Applications</h2>
+            <p class="mb-0">Track candidates from new application through screening and approval.</p>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search applications" data-table-search="applicationsTable">
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle admin-table" id="applicationsTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Name</th>
+                    <th>Contact</th>
+                    <th>Availability</th>
+                    <th>Experience</th>
+                    <th>Certifications</th>
+                    <th>Requirements</th>
+                    <th>References</th>
+                    <th>Consent</th>
+                    <th>Resume</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in applications %}
+                <tr>
+                    <td>{{ item.created_at.strftime("%Y-%m-%d") if item.created_at else "" }}</td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.email }}<br>{{ item.phone }}</td>
+                    <td>{{ item.availability }}<br>{{ item.weekday_availability }}<br>{{ item.weekend_availability }}</td>
+                    <td>{{ item.years_experience }}<br>{{ item.experience }}</td>
+                    <td>{{ item.certifications }}</td>
+                    <td><pre class="compact-pre">{{ item.requirements_checklist or "No requirements checked yet" }}</pre></td>
+                    <td>{{ item.applicant_references }}</td>
+                    <td>{{ "Yes" if item.background_check_consent else "No" }}</td>
+                    <td>{{ item.resume_filename or "No file" }}</td>
+                    <td>
+                        <form method="POST" action="/admin/applications/{{ item.id }}/status" class="d-flex gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <select name="status" class="form-select form-select-sm">
+                                {% for status in application_statuses %}
+                                <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary">Save</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="11"><div class="empty-state">No caregiver applications yet.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% endblock %}
+

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Client portal</span>
+    <h1>My appointments</h1>
+    <p>Review appointment history, caregiver assignment, status, and next actions.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="/request-care">Request Care</a>
+        <a class="btn btn-light btn-lg" href="/profile">Update Care Profile</a>
+    </div>
+</div>
+
+<section class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="content-card h-100">
+            <span class="eyebrow">Care plan v1</span>
+            <h2 class="h4">Profile summary</h2>
+            <p><strong>Preferred schedule:</strong><br>{{ user.preferred_schedule or "Not added yet" }}</p>
+            <p><strong>Care needs:</strong><br>{{ user.care_needs or "Add care needs so the team can plan visits more clearly." }}</p>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="content-card h-100">
+            <span class="eyebrow">Family workflow</span>
+            <h2 class="h4">What this portal should help with</h2>
+            <div class="care-plan-list compact-care-plan">
+                <div>Appointment history</div>
+                <div>Status updates</div>
+                <div>Caregiver assignment</div>
+                <div>Visit notes</div>
+                <div>Care preferences</div>
+                <div>Schedule changes</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="content-card table-card">
+<div class="table-toolbar">
+    <div>
+        <h2 class="h4 mb-1">Appointment history</h2>
+        <p class="mb-0">Search by date, service, caregiver, or status.</p>
+    </div>
+    <input class="form-control table-search" type="search" placeholder="Search appointments" data-table-search="clientAppointmentsTable">
+</div>
+
+<table class="table align-middle admin-table" id="clientAppointmentsTable">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Service</th>
+            <th>Caregiver</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+
+    <tbody>
+
+    {% for a in appointments %}
+
+        <tr>
+
+            <td>{{ a.date }}</td>
+            <td>{{ a.time }}</td>
+            <td>{{ a.service_type }}</td>
+
+            <td>
+                {% if a.caregiver %}
+                    {{ a.caregiver.name }}
+                {% else %}
+                    Not Assigned
+                {% endif %}
+            </td>
+
+            <td><span class="status-pill status-{{ a.status }}">{{ a.status }}</span></td>
+            <td>
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-sm btn-primary" href="/appointment/{{ a.id }}/edit">Edit</a>
+                    {% if a.status != "cancelled" and a.status != "completed" %}
+                    <form method="POST" action="/appointment/{{ a.id }}/cancel">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-sm btn-outline-danger">Cancel</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </td>
+
+        </tr>
+
+    {% endfor %}
+
+    {% if not appointments %}
+        <tr>
+            <td colspan="6"><div class="empty-state">No appointment requests yet. Request care when you are ready.</div></td>
+        </tr>
+    {% endif %}
+
+    </tbody>
+
+</table>
+</div>
+
+{% endblock %}
+
+

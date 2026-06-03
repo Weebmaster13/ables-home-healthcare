@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Caregiver portal</span>
+    <h1>Availability</h1>
+    <p>Keep days, times, and service areas current so the office can match visits faster and avoid conflicts.</p>
+</div>
+
+<form method="POST" class="contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input name="phone" class="form-control" value="{{ user.phone or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Home base / default service area</label>
+            <input name="address" class="form-control" value="{{ user.address or '' }}" placeholder="City, county, or preferred area">
+        </div>
+        <div class="col-12">
+            <label class="form-label">General availability notes</label>
+            <textarea name="preferred_schedule" class="form-control" rows="3" placeholder="Example: Can accept same-day visits in Silver Spring. No overnight shifts.">{{ user.preferred_schedule or "" }}</textarea>
+        </div>
+    </div>
+
+    <section class="availability-grid mt-4">
+        {% for day in weekdays %}
+        {% set row = availability_rows.get(day) %}
+        <div class="availability-card">
+            <label class="availability-toggle">
+                <input type="checkbox" name="available_{{ day }}" value="yes" {% if row %}checked{% endif %}>
+                <strong>{{ day }}</strong>
+            </label>
+            <div class="availability-fields">
+                <label class="form-label">Start</label>
+                <input name="start_{{ day }}" type="time" class="form-control" value="{{ row.start_time if row else '' }}">
+                <label class="form-label">End</label>
+                <input name="end_{{ day }}" type="time" class="form-control" value="{{ row.end_time if row else '' }}">
+                <label class="form-label">Service area</label>
+                <input name="area_{{ day }}" class="form-control" value="{{ row.service_area if row else '' }}" placeholder="Example: Baltimore City, Montgomery County">
+                <label class="form-label">Notes</label>
+                <input name="notes_{{ day }}" class="form-control" value="{{ row.notes if row else '' }}" placeholder="Optional">
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+
+    <div class="portal-actions mt-4">
+        <button class="btn btn-primary">Save Availability</button>
+        <a class="btn btn-outline-primary" href="/dashboard">Back to Dashboard</a>
+    </div>
+</form>
+
+{% endblock %}
+
+

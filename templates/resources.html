@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Family Home Care Resources | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Read practical family resources about home care timing, home care vs home health care, preparing the home, hiring questions, and respite care.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero faq-hero">
+    <span class="eyebrow">Family resources</span>
+    <h1>Helpful home care guidance</h1>
+    <p>Educational articles for families comparing care options and preparing for non-medical support at home.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="/free-consultation">Ask a Care Question</a>
+        <a class="btn btn-light btn-lg" href="/pricing-payment">Payment Guidance</a>
+    </div>
+</div>
+
+<section class="featured-resource">
+    <div>
+        <span class="eyebrow">Start here</span>
+        <h2>When a care need appears suddenly, families need plain answers.</h2>
+        <p>Use these articles to compare options, prepare the home, ask better questions, and decide whether a free consultation is the right next step.</p>
+    </div>
+    <a class="btn btn-primary" href="/resources/when-is-it-time-for-home-care">Read the Starter Guide</a>
+</section>
+
+<section class="row g-4">
+    {% for article in articles %}
+    <div class="col-md-6">
+        <div class="content-card resource-card h-100">
+            <span class="card-kicker">Family guide</span>
+            <h2>{{ article.title }}</h2>
+            <p>{{ article.summary }}</p>
+            <a class="text-link" href="/resources/{{ article.slug }}">Read Article</a>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="compliance-note mt-4">
+    Educational content is general information only. It is not medical advice and is not for emergencies. Confirm service scope, licensing, and care decisions with qualified professionals.
+</section>
+
+{% endblock %}
+
+

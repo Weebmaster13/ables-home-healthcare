@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin reports</span>
+    <h1>Reports and exports</h1>
+    <p>Download operational records for scheduling, communication, documents, caregiver availability, and audit review.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Today</span><strong>{{ reminders.today|length }}</strong></div>
+    <div class="stat-card"><span>Tomorrow</span><strong>{{ reminders.tomorrow|length }}</strong></div>
+    <div class="stat-card"><span>Unassigned</span><strong>{{ unassigned }}</strong></div>
+    <div class="stat-card"><span>Open Messages</span><strong>{{ open_messages }}</strong></div>
+    <a class="stat-card stat-link" href="/admin/schedule"><span>Schedule</span><strong>Go</strong></a>
+</section>
+
+<section class="portal-help-strip compact mb-4">
+    <div>
+        <strong>Operations shortcuts</strong>
+        <span>Send visit reminders or create a full backup of the database and uploaded files.</span>
+    </div>
+    <div class="portal-actions">
+        <form method="POST" action="/admin/reminders/send/today">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-light btn-sm">Send Today Reminders</button>
+        </form>
+        <form method="POST" action="/admin/reminders/send/tomorrow">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-light btn-sm">Send Tomorrow Reminders</button>
+        </form>
+        <a class="btn btn-light btn-sm" href="/admin/backups">Backups</a>
+    </div>
+</section>
+
+<section class="report-grid">
+    {% for card in report_cards %}
+    <article class="report-card">
+        <span>{{ card.count }} records</span>
+        <h2>{{ card.title }}</h2>
+        <p>{{ card.description }}</p>
+        <a class="btn btn-outline-primary btn-sm" href="{{ card.url }}">Download CSV</a>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Delivery logs</span>
+            <h2 class="h4 mb-0">Recent email and SMS attempts</h2>
+        </div>
+        <div class="portal-actions">
+            <a class="btn btn-outline-primary btn-sm" href="/admin/notifications">Filter Logs</a>
+            <a class="btn btn-outline-primary btn-sm" href="/admin/reports/export/notifications">Export Notifications</a>
+        </div>
+    </div>
+
+    {% if notification_logs %}
+    <div class="table-responsive">
+        <table class="table align-middle admin-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Channel</th>
+                    <th>Recipient</th>
+                    <th>Status</th>
+                    <th>Subject</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in notification_logs %}
+                <tr>
+                    <td>{{ item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "" }}</td>
+                    <td>{{ item.channel }}</td>
+                    <td>{{ item.recipient or "" }}</td>
+                    <td>{{ item.status }}</td>
+                    <td>{{ item.subject or "" }}</td>
+                    <td>{{ item.error or "" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">No email or SMS delivery attempts logged yet.</div>
+    {% endif %}
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Audit trail</span>
+            <h2 class="h4 mb-0">Recent activity</h2>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/reports/export/audit">Export Audit</a>
+    </div>
+
+    {% if recent_events %}
+    <div class="clean-list">
+        {% for event in recent_events %}
+        <div>
+            <strong>{{ event.action }}</strong>
+            <span>{{ event.user.email if event.user else "System" }} | {{ event.entity_type or "Record" }} #{{ event.entity_id or "" }}</span>
+            <span>{{ event.details or "No details" }} | {{ event.created_at.strftime("%Y-%m-%d") if event.created_at else "" }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No audit activity recorded yet.</div>
+    {% endif %}
+</section>
+
+{% endblock %}
+

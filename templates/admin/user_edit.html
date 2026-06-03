@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin</span>
+    <h1>Edit {{ account.name }}</h1>
+    <p>Update profile, role, and client care information.</p>
+</div>
+
+<form method="POST" class="contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Full Name</label>
+            <input name="name" class="form-control" value="{{ account.name }}" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Email</label>
+            <input name="email" type="email" class="form-control" value="{{ account.email }}" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input name="phone" class="form-control" value="{{ account.phone or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Role</label>
+            <select name="role" class="form-select">
+                {% for role in ["client", "caregiver", "admin"] %}
+                <option value="{{ role }}" {% if account.role == role %}selected{% endif %}>{{ role }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Address</label>
+            <input name="address" class="form-control" value="{{ account.address or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Emergency Contact Name</label>
+            <input name="emergency_contact_name" class="form-control" value="{{ account.emergency_contact_name or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Emergency Contact Phone</label>
+            <input name="emergency_contact_phone" class="form-control" value="{{ account.emergency_contact_phone or '' }}">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Preferred Schedule</label>
+            <input name="preferred_schedule" class="form-control" value="{{ account.preferred_schedule or '' }}">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Care Needs</label>
+            <textarea name="care_needs" class="form-control" rows="4">{{ account.care_needs or "" }}</textarea>
+        </div>
+        <div class="col-12">
+            <button class="btn btn-primary">Save Changes</button>
+            <a class="btn btn-outline-primary" href="/admin/users">Cancel</a>
+        </div>
+    </div>
+</form>
+
+<section class="row g-4 mt-4">
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <span class="eyebrow">Private admin notes</span>
+            <h2 class="h4">Internal notes</h2>
+            <form method="POST" action="/admin/users/{{ account.id }}/notes" class="mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="form-label">New private note</label>
+                <textarea name="note" class="form-control" rows="4" required></textarea>
+                <button class="btn btn-outline-primary btn-sm mt-2">Save Note</button>
+            </form>
+            <div class="clean-list">
+                {% for note in admin_notes %}
+                <div>
+                    <strong>{{ note.admin.name if note.admin else "Admin" }}</strong>
+                    <span>{{ note.created_at.strftime("%Y-%m-%d") if note.created_at else "" }}</span>
+                    <p>{{ note.note }}</p>
+                </div>
+                {% else %}
+                <div class="empty-state">No private notes yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <span class="eyebrow">Documents</span>
+            <h2 class="h4">User files</h2>
+            <form method="POST" action="/admin/users/{{ account.id }}/documents" enctype="multipart/form-data" class="mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="form-label">Title</label>
+                <input name="title" class="form-control mb-2" placeholder="Document title">
+                <label class="form-label">Category</label>
+                <select name="category" class="form-select mb-2">
+                    {% for category in document_categories %}
+                    <option value="{{ category }}">{{ category }}</option>
+                    {% endfor %}
+                </select>
+                <label class="form-label">File</label>
+                <input name="document" type="file" class="form-control mb-2" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" required>
+                <div class="form-text mb-2">Maximum file size: {{ max_upload_mb }} MB. Accepted files: PDF, PNG, JPG, DOC, DOCX.</div>
+                <label class="form-label">Notes</label>
+                <textarea name="notes" class="form-control" rows="2"></textarea>
+                <button class="btn btn-outline-primary btn-sm mt-2">Upload File</button>
+            </form>
+            <div class="clean-list">
+                {% for doc in documents %}
+                <div>
+                    <strong>{{ doc.title }}</strong>
+                    <span>{{ doc.category }} | {{ doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "" }}</span>
+                    <a href="/documents/{{ doc.id }}/download">Download {{ doc.original_filename }}</a>
+                    <form method="POST" action="/documents/{{ doc.id }}/archive" class="mt-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-outline-danger btn-sm">Archive</button>
+                    </form>
+                </div>
+                {% else %}
+                <div class="empty-state">No documents saved for this user.</div>
+                {% endfor %}
+            </div>
+            {% if archived_documents %}
+            <h3 class="h6 mt-4">Archived files</h3>
+            <div class="clean-list">
+                {% for doc in archived_documents %}
+                <div>
+                    <strong>{{ doc.title }}</strong>
+                    <span>{{ doc.original_filename }} | archived {{ doc.archived_at.strftime("%Y-%m-%d") if doc.archived_at else "" }}</span>
+                    <div class="portal-actions mt-2">
+                        <form method="POST" action="/documents/{{ doc.id }}/restore">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-outline-primary btn-sm">Restore</button>
+                        </form>
+                        <form method="POST" action="/documents/{{ doc.id }}/delete">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-outline-danger btn-sm">Delete Permanently</button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% if onboarding_items %}
+<section class="content-card mt-4">
+    <span class="eyebrow">Caregiver onboarding</span>
+    <h2 class="h4">Checklist</h2>
+    <form method="POST" action="/admin/users/{{ account.id }}/onboarding">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="table-responsive">
+            <table class="table align-middle admin-table">
+                <thead><tr><th>Item</th><th>Status</th><th>Notes</th></tr></thead>
+                <tbody>
+                    {% for item in onboarding_items %}
+                    <tr>
+                        <td>{{ item.item_type }}</td>
+                        <td>
+                            <select name="status_{{ item.item_type }}" class="form-select form-select-sm">
+                                {% for status in ["pending", "in review", "complete", "not required"] %}
+                                <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td><input name="notes_{{ item.item_type }}" class="form-control form-control-sm" value="{{ item.notes or '' }}"></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <button class="btn btn-outline-primary btn-sm">Save Checklist</button>
+    </form>
+</section>
+{% endif %}
+
+<section class="content-card mt-4">
+    <span class="eyebrow">Activity timeline</span>
+    <h2 class="h4">Recent user activity</h2>
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <h3 class="h6">Audit events</h3>
+            <div class="clean-list">
+                {% for item in activity.audit_events %}
+                <div><strong>{{ item.action }}</strong><span>{{ item.details or "" }} | {{ item.created_at }}</span></div>
+                {% else %}<div class="empty-state">No audit events.</div>{% endfor %}
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <h3 class="h6">Appointments</h3>
+            <div class="clean-list">
+                {% for item in activity.appointments %}
+                <div><strong>{{ item.date }} {{ item.time }}</strong><span>{{ item.service_type }} | {{ item.status }}</span></div>
+                {% else %}<div class="empty-state">No appointments.</div>{% endfor %}
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <h3 class="h6">Messages</h3>
+            <div class="clean-list">
+                {% for item in activity.messages %}
+                <div><strong>{{ item.subject }}</strong><span>{{ item.topic }} | {{ item.status }}</span></div>
+                {% else %}<div class="empty-state">No messages.</div>{% endfor %}
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <h3 class="h6">Documents</h3>
+            <div class="clean-list">
+                {% for item in activity.documents %}
+                <div><strong>{{ item.title }}</strong><span>{{ item.category }} | {{ item.created_at }}</span></div>
+                {% else %}<div class="empty-state">No documents.</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+

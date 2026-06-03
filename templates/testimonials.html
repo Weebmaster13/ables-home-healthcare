@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero faq-hero">
+    <span class="eyebrow">Testimonials</span>
+    <h1>Stories of reassurance and support</h1>
+    <p>Warm, human proof points help families feel less alone when they are making care decisions.</p>
+</div>
+
+<section class="row g-4">
+    {% for item in testimonials %}
+    <div class="col-lg-4">
+        <div class="testimonial-card h-100">
+            <p>"{{ item.quote }}"</p>
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.context }}</span>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="content-band mt-4">
+    <div class="row g-4 align-items-center">
+        <div class="col-lg-7">
+            <span class="eyebrow">Reviews</span>
+            <h2>Real reviews help families choose care with more confidence.</h2>
+            <p>After the Google Business Profile is active, add the official review link here and invite approved clients or families to share public feedback.</p>
+        </div>
+        <div class="col-lg-5 text-lg-end">
+            <a class="btn btn-primary" href="/contact">Share Feedback</a>
+        </div>
+    </div>
+</section>
+
+<section class="mission-card mt-5">
+    <div class="row align-items-center g-3">
+        <div class="col-lg-8">
+            <h2>Have a care question?</h2>
+            <p class="mb-0">Reach out to Ables Home Healthcare and a care coordinator can help you decide the next step.</p>
+        </div>
+        <div class="col-lg-4 text-lg-end">
+            <a class="btn btn-light" href="/contact">Contact Us</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

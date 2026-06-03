@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Portal messages</span>
+    <h1>Message the office</h1>
+    <p>Send scheduling, care-plan, billing, or visit questions to the Ables Home Healthcare team.</p>
+</div>
+
+<section class="portal-command-grid">
+    <div class="content-card">
+        <span class="eyebrow">New message</span>
+        <h2 class="h4">Ask for help</h2>
+        <form method="POST" class="contact-form compact-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label class="form-label">Topic</label>
+            <select name="topic" class="form-select" required>
+                <option value="">Choose topic</option>
+                {% for topic in message_topics %}
+                <option value="{{ topic }}">{{ topic }}</option>
+                {% endfor %}
+            </select>
+
+            <label class="form-label">Priority</label>
+            <select name="priority" class="form-select">
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent scheduling or safety concern</option>
+            </select>
+
+            <label class="form-label">Subject</label>
+            <input name="subject" class="form-control" maxlength="160" required placeholder="Short title">
+
+            <label class="form-label">Message</label>
+            <textarea name="body" class="form-control" rows="6" required placeholder="Include the date, client name, appointment, or question so the office can help faster."></textarea>
+
+            <button class="btn btn-primary mt-3">Send Message</button>
+        </form>
+    </div>
+
+    <div class="content-card">
+        <span class="eyebrow">Use the right channel</span>
+        <h2 class="h4">Quick guidance</h2>
+        <div class="portal-checklist">
+            <div>
+                <span></span>
+                <p><strong>Emergency</strong> Call 911 first for medical or safety emergencies.</p>
+            </div>
+            <div>
+                <span></span>
+                <p><strong>Same-day schedule issue</strong> Send an urgent message and call the office.</p>
+            </div>
+            <div>
+                <span></span>
+                <p><strong>Care update</strong> Include visit date, client name, and what changed.</p>
+            </div>
+            <div>
+                <span></span>
+                <p><strong>Billing question</strong> Include insurance or payment details without sharing sensitive numbers.</p>
+            </div>
+        </div>
+        <a class="btn btn-outline-primary mt-3" href="tel:3013262225">Call Office</a>
+    </div>
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Conversation history</span>
+            <h2 class="h4 mb-0">Your messages</h2>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search messages" data-card-search="portalMessageCards">
+    </div>
+
+    {% if messages %}
+    <div class="visit-card-list" id="portalMessageCards">
+        {% for item in messages %}
+        <article class="visit-card polished-visit-card portal-task-card" data-search-card>
+            <div class="visit-card-header">
+                <strong>{{ item.subject }}</strong>
+                <span class="status-pill status-{{ item.status|replace(' ', '-') }}">{{ item.status }}</span>
+            </div>
+            <div class="task-meta">
+                <span><strong>Topic:</strong> {{ item.topic }}</span>
+                <span><strong>Priority:</strong> {{ item.priority }}</span>
+                <span><strong>Sent:</strong> {{ item.created_at.strftime("%Y-%m-%d") if item.created_at else "" }}</span>
+                <span><strong>Updated:</strong> {{ item.updated_at.strftime("%Y-%m-%d") if item.updated_at else "" }}</span>
+            </div>
+            <p><strong>Your message:</strong> {{ item.body }}</p>
+            {% if item.admin_reply %}
+            <p><strong>Office reply:</strong> {{ item.admin_reply }}</p>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No portal messages yet. Send your first question above.</div>
+    {% endif %}
+</section>
+
+{% endblock %}
+
+

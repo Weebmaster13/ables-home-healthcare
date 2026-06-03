@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin system</span>
+    <h1>System status</h1>
+    <p>Review deployment readiness, health checks, backups, and recent failures from one page.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Database</span><strong>{{ "OK" if status.database_ok else "Issue" }}</strong></div>
+    <div class="stat-card"><span>PostgreSQL</span><strong>{{ "Ready" if status.postgresql_configured else "SQLite" }}</strong></div>
+    <div class="stat-card"><span>SMTP</span><strong>{{ "Ready" if status.smtp_configured else "Missing" }}</strong></div>
+    <div class="stat-card"><span>Virus Scanner</span><strong>{{ "Ready" if status.virus_scanner_configured else "Basic" }}</strong></div>
+    <div class="stat-card"><span>Backups</span><strong>{{ backup_count }}</strong></div>
+</section>
+
+<section class="content-card mb-4">
+    <h2 class="h4">Configuration</h2>
+    <div class="clean-list">
+        <div><strong>Site URL</strong><span>{{ status.site_base_url }}</span></div>
+        <div><strong>Production mode</strong><span>{{ "Enabled" if status.production_mode else "Development" }}</span></div>
+        <div><strong>Upload folder</strong><span>{{ status.upload_folder }} | {{ "exists" if status.upload_folder_exists else "missing" }}</span></div>
+        <div><strong>Latest backup</strong><span>{{ latest_backup.name if latest_backup else "No backups yet" }}</span></div>
+        <div><strong>Migration version</strong><span>{{ migration_version }}</span></div>
+        <div><strong>Latest migration</strong><span>{{ latest_revision }} | {{ "current" if migration_current else "check migration" }}</span></div>
+        <div><strong>Log file size</strong><span>{{ (log_size / 1024)|round(1) }} KB</span></div>
+    </div>
+    <div class="portal-actions mt-3">
+        <a class="btn btn-outline-primary btn-sm" href="/admin/maintenance">Maintenance Center</a>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/logs">View Logs</a>
+        <a class="btn btn-outline-primary btn-sm" href="/healthz">Health JSON</a>
+    </div>
+</section>
+
+<section class="row g-4">
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Recent failed notifications</h2>
+            <div class="clean-list">
+                {% for item in failed_notifications %}
+                <div><strong>{{ item.channel }} | {{ item.status }}</strong><span>{{ item.recipient }} | {{ item.error }}</span></div>
+                {% else %}
+                <div class="empty-state">No failed notifications found.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Recent failed logins</h2>
+            <div class="clean-list">
+                {% for item in failed_logins %}
+                <div><strong>{{ item.action }}</strong><span>{{ item.user.email if item.user else "Unknown" }} | {{ item.created_at }}</span></div>
+                {% else %}
+                <div class="empty-state">No recent failed login activity found.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+

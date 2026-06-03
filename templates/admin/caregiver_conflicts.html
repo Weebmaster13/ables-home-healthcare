@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Caregiver operations</span>
+    <h1>Assignment conflicts</h1>
+    <p>Find double-booked caregivers, unassigned upcoming visits, and completed visits missing notes.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Double Bookings</span><strong>{{ double_bookings|length }}</strong></div>
+    <div class="stat-card"><span>Unassigned Upcoming</span><strong>{{ unassigned|length }}</strong></div>
+    <div class="stat-card"><span>Missing Notes</span><strong>{{ missing_notes|length }}</strong></div>
+</section>
+
+<section class="content-card mb-4">
+    <h2 class="h4">Double-booked caregivers</h2>
+    <div class="clean-list">
+        {% for group in double_bookings %}
+        <div>
+            <strong>{{ group[0].caregiver.name if group[0].caregiver else "Caregiver" }} | {{ group[0].date }} {{ group[0].time }}</strong>
+            <span>{{ group|length }} visits assigned at the same time.</span>
+        </div>
+        {% else %}
+        <div class="empty-state">No double bookings found.</div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="row g-4">
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Unassigned upcoming visits</h2>
+            <div class="clean-list">
+                {% for item in unassigned %}
+                <div><strong>{{ item.date }} {{ item.time }}</strong><span>{{ item.client.name if item.client else "Unknown client" }} | {{ item.service_type }}</span></div>
+                {% else %}
+                <div class="empty-state">No unassigned upcoming visits.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Completed visits missing notes</h2>
+            <div class="clean-list">
+                {% for item in missing_notes %}
+                <div><strong>{{ item.date }} {{ item.time }}</strong><span>{{ item.client.name if item.client else "Unknown client" }} | {{ item.caregiver.name if item.caregiver else "No caregiver" }}</span></div>
+                {% else %}
+                <div class="empty-state">No completed visits missing notes.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+

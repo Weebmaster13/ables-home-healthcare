@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Documents</span>
+    <h1>Secure document center</h1>
+    <p>Upload intake forms, consent forms, insurance documents, care-plan files, and other office paperwork.</p>
+</div>
+
+<section class="portal-command-grid">
+    <div class="content-card">
+        <span class="eyebrow">Upload</span>
+        <h2 class="h4">Add a document</h2>
+        <form method="POST" enctype="multipart/form-data" class="contact-form compact-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="form-label">Document title</label>
+            <input name="title" class="form-control" placeholder="Example: Signed consent form">
+
+            <label class="form-label">Category</label>
+            <select name="category" class="form-select">
+                {% for category in document_categories %}
+                <option value="{{ category }}">{{ category }}</option>
+                {% endfor %}
+            </select>
+
+            <label class="form-label">File</label>
+            <input name="document" type="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" required>
+            <div class="form-text">Maximum file size: {{ max_upload_mb }} MB. Accepted files: PDF, PNG, JPG, DOC, DOCX.</div>
+
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="3" placeholder="Optional note for the office"></textarea>
+
+            <label class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" name="document_consent" value="yes" required>
+                <span class="form-check-label">I understand uploads may contain sensitive information and should only include documents needed for care coordination or office review. I will not use this form for emergencies.</span>
+            </label>
+
+            <button class="btn btn-primary mt-3">Upload Document</button>
+        </form>
+    </div>
+
+    <div class="content-card">
+        <span class="eyebrow">Document safety</span>
+        <h2 class="h4">Before uploading</h2>
+        <div class="portal-checklist">
+            <div><span></span><p><strong>Use clear names</strong> Title documents so the office can find them quickly.</p></div>
+            <div><span></span><p><strong>Do not upload emergencies</strong> Call 911 for emergencies and call the office for urgent care changes.</p></div>
+            <div><span></span><p><strong>Allowed files</strong> PDF, PNG, JPG, DOC, and DOCX are accepted.</p></div>
+            <div><span></span><p><strong>File size</strong> Each upload must be {{ max_upload_mb }} MB or smaller.</p></div>
+        </div>
+    </div>
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Your files</span>
+            <h2 class="h4 mb-0">Uploaded documents</h2>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search documents" data-card-search="documentCards">
+    </div>
+    {% if documents %}
+    <div class="visit-card-list" id="documentCards">
+        {% for item in documents %}
+        <article class="visit-card polished-visit-card portal-task-card" data-search-card>
+            <div class="visit-card-header">
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.category }}</span>
+            </div>
+            <div class="task-meta">
+                <span><strong>Uploaded:</strong> {{ item.created_at.strftime("%Y-%m-%d") if item.created_at else "" }}</span>
+                <span><strong>File:</strong> {{ item.original_filename }}</span>
+            </div>
+            {% if item.notes %}<p><strong>Notes:</strong> {{ item.notes }}</p>{% endif %}
+            <div class="portal-actions">
+                <a class="btn btn-outline-primary btn-sm" href="/documents/{{ item.id }}/download">Download</a>
+                <form method="POST" action="/documents/{{ item.id }}/archive">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-danger btn-sm">Archive</button>
+                </form>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No documents uploaded yet.</div>
+    {% endif %}
+</section>
+
+{% if archived_documents %}
+<section class="content-card mt-4">
+    <span class="eyebrow">Archive</span>
+    <h2 class="h4">Archived documents</h2>
+    <div class="visit-card-list">
+        {% for item in archived_documents %}
+        <article class="visit-card polished-visit-card portal-task-card">
+            <div class="visit-card-header">
+                <strong>{{ item.title }}</strong>
+                <span>Archived</span>
+            </div>
+            <div class="task-meta">
+                <span><strong>Archived:</strong> {{ item.archived_at.strftime("%Y-%m-%d") if item.archived_at else "" }}</span>
+                <span><strong>File:</strong> {{ item.original_filename }}</span>
+            </div>
+            <div class="portal-actions">
+                <form method="POST" action="/documents/{{ item.id }}/restore">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-primary btn-sm">Restore</button>
+                </form>
+                <form method="POST" action="/documents/{{ item.id }}/delete">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-danger btn-sm">Delete Permanently</button>
+                </form>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+

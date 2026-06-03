@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin</span>
+    <h1>Appointment management</h1>
+    <p>Review requests, assign caregivers, update status, and monitor non-medical care visits.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Total</span><strong>{{ appointments|length }}</strong></div>
+    <div class="stat-card"><span>Pending</span><strong>{{ appointments|selectattr("status", "equalto", "pending")|list|length }}</strong></div>
+    <div class="stat-card"><span>Assigned</span><strong>{{ appointments|selectattr("status", "equalto", "assigned")|list|length }}</strong></div>
+    <div class="stat-card"><span>Completed</span><strong>{{ appointments|selectattr("status", "equalto", "completed")|list|length }}</strong></div>
+    <div class="stat-card"><span>Unassigned</span><strong>{{ appointments|rejectattr("caregiver")|list|length }}</strong></div>
+</section>
+
+<section class="portal-help-strip compact mb-4">
+    <div>
+        <strong>Need a schedule view?</strong>
+        <span>Use the calendar-style board to review today, tomorrow, unassigned visits, and caregiver matches.</span>
+    </div>
+    <a class="btn btn-light btn-sm" href="/admin/schedule">Open Schedule Board</a>
+</section>
+
+<div class="content-card table-card admin-table-card">
+<div class="table-toolbar">
+    <div>
+        <h2 class="h4 mb-1">Appointment requests</h2>
+        <p class="mb-0">Search by client, caregiver, service, notes, or status.</p>
+    </div>
+    <input class="form-control table-search" type="search" placeholder="Search appointments" data-table-search="appointmentsTable">
+</div>
+
+<table class="table align-middle admin-table" id="appointmentsTable">
+
+    <thead class="table-dark">
+        <tr>
+            <th>ID</th>
+            <th>Client</th>
+            <th>Caregiver</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Service</th>
+            <th>Address</th>
+            <th>Notes</th>
+            <th>Status</th>
+            <th width="330">Actions</th>
+        </tr>
+    </thead>
+
+    <tbody>
+
+    {% for a in appointments %}
+
+        <tr>
+
+            <td>{{ a.id }}</td>
+
+            <td>
+                {% if a.client %}
+                    {{ a.client.name }}
+                {% else %}
+                    Unknown
+                {% endif %}
+            </td>
+
+            <td>
+                {% if a.caregiver %}
+                    <span class="text-success">
+                        {{ a.caregiver.name }}
+                    </span>
+                {% else %}
+                    <span class="text-danger">
+                        Unassigned
+                    </span>
+                {% endif %}
+            </td>
+
+            <td>{{ a.date }}</td>
+            <td>{{ a.time }}</td>
+            <td>{{ a.service_type }}</td>
+            <td>{{ a.service_address }}</td>
+            <td>
+                {{ a.notes }}
+                {% if a.mobility_needs %}<br><strong>Safety:</strong> {{ a.mobility_needs }}{% endif %}
+                {% if a.emergency_contact %}<br><strong>Emergency:</strong> {{ a.emergency_contact }}{% endif %}
+                {% if a.preferred_language %}<br><strong>Language:</strong> {{ a.preferred_language }}{% endif %}
+            </td>
+
+            <td>
+
+                {% if a.status == "pending" %}
+                    <span class="status-pill status-pending">
+                        Pending
+                    </span>
+
+                {% elif a.status == "approved" %}
+                    <span class="status-pill status-approved">
+                        Approved
+                    </span>
+
+                {% elif a.status == "assigned" %}
+                    <span class="status-pill status-assigned">
+                        Assigned
+                    </span>
+
+                {% elif a.status == "completed" %}
+                    <span class="status-pill status-completed">
+                        Completed
+                    </span>
+
+                {% elif a.status == "rejected" %}
+                    <span class="status-pill status-rejected">
+                        Rejected
+                    </span>
+
+                {% else %}
+                    <span class="status-pill">
+                        {{ a.status }}
+                    </span>
+
+                {% endif %}
+
+            </td>
+
+            <td>
+
+                <div class="mb-2">
+
+                    <form method="POST" action="/admin/appointment/{{ a.id }}/approve" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-success btn-sm">Approve</button>
+                    </form>
+
+                    <form method="POST" action="/admin/appointment/{{ a.id }}/reject" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-danger btn-sm">Reject</button>
+                    </form>
+
+                </div>
+
+                <form method="POST"
+                      action="/admin/appointment/{{ a.id }}/assign">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <select name="caregiver_id"
+                            class="form-select form-select-sm mb-2">
+
+                        <option value="">Select caregiver</option>
+                        {% for u in users %}
+                            {% if u.role == "caregiver" %}
+                                <option value="{{ u.id }}">
+                                    {{ u.name }}
+                                </option>
+                            {% endif %}
+                        {% endfor %}
+
+                    </select>
+
+                    <label class="form-check small mb-2">
+                        <input class="form-check-input" type="checkbox" name="override_conflict" value="yes">
+                        Override exact date/time conflict
+                    </label>
+
+                    <button type="submit"
+                            class="btn btn-primary btn-sm">
+                        Assign Caregiver
+                    </button>
+
+                </form>
+
+                {% if match_suggestions.get(a.id) %}
+                <div class="match-list mt-2">
+                    <span class="match-label">Suggested matches</span>
+                    {% for match in match_suggestions.get(a.id) %}
+                    <form method="POST" action="/admin/appointment/{{ a.id }}/assign" class="match-card">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="caregiver_id" value="{{ match.caregiver.id }}">
+                        <div>
+                            <strong>{{ match.caregiver.name }}</strong>
+                            <span>{{ match.score }}% match</span>
+                            <small>{{ match.reasons|join("; ") }}{% if match.warnings %} | {{ match.warnings|join("; ") }}{% endif %}</small>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm">Assign</button>
+                    </form>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <a class="btn btn-secondary btn-sm" href="/appointment/{{ a.id }}/edit">Edit</a>
+                    {% if a.status != "cancelled" %}
+                    <form method="POST" action="/appointment/{{ a.id }}/cancel">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-outline-danger btn-sm">Cancel</button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                {% if a.date and a.time and a.status not in ["cancelled", "rejected", "completed"] %}
+                <form method="POST" action="/admin/appointment/{{ a.id }}/repeat" class="recurring-form advanced-recurring-form mt-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label class="form-label">Every</label>
+                    <select name="interval_weeks" class="form-select form-select-sm">
+                        <option value="1">1 week</option>
+                        <option value="2">2 weeks</option>
+                        <option value="3">3 weeks</option>
+                        <option value="4">4 weeks</option>
+                    </select>
+                    <label class="form-label">Visits</label>
+                    <select name="count" class="form-select form-select-sm">
+                        <option value="4">4</option>
+                        <option value="8">8</option>
+                        <option value="12">12</option>
+                        <option value="26">26</option>
+                        <option value="52">52</option>
+                    </select>
+                    <label class="form-label">End</label>
+                    <input name="end_date" type="date" class="form-control form-control-sm">
+                    <button class="btn btn-outline-primary btn-sm">Create</button>
+                </form>
+                {% if a.recurring_group_id %}
+                <div class="portal-actions mt-2">
+                    <form method="POST" action="/admin/recurring/{{ a.recurring_group_id }}/pause">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-outline-danger btn-sm">Pause Series</button>
+                    </form>
+                    <form method="POST" action="/admin/recurring/{{ a.recurring_group_id }}/resume">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-outline-primary btn-sm">Resume Series</button>
+                    </form>
+                </div>
+                {% endif %}
+                {% endif %}
+
+            </td>
+
+        </tr>
+
+    {% endfor %}
+
+    {% if not appointments %}
+        <tr>
+            <td colspan="10">
+                <div class="empty-state">No appointment requests yet.</div>
+            </td>
+        </tr>
+    {% endif %}
+
+    </tbody>
+
+</table>
+
+</div>
+
+{% endblock %}
+

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Care Standards | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Learn about Ables Home Healthcare care standards including respectful greetings, hand hygiene, focused care time, caregiver matching, and family follow-up.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero about-hero">
+    <span class="eyebrow">Our care standards</span>
+    <h1>Small details create big confidence.</h1>
+    <p>Families notice whether caregivers are respectful, clean, attentive, flexible, and focused.</p>
+</div>
+
+<section class="home-story">
+    <div class="story-copy">
+        <span class="eyebrow">Inspired by family feedback</span>
+        <h2>Respectful care starts before the first task.</h2>
+        <p>
+            Carole C. described Ables as calming and reassuring, with providers who greet the
+            patient, avoid talking down, value hand washing, avoid idle phone conversations,
+            and follow through even on short notice. Those details now shape this standards page.
+        </p>
+        <a class="btn btn-primary" href="/free-consultation">Talk With Us</a>
+    </div>
+    <div class="story-photo-grid">
+        <div class="story-photo story-photo-main"></div>
+        <div class="story-photo story-photo-small"></div>
+        <div class="story-note">
+            <strong>Focused care time matters.</strong>
+            <span>Respect, hygiene, communication, and follow-up are part of quality.</span>
+        </div>
+    </div>
+</section>
+
+<section class="standards-grid">
+    {% for standard in standards %}
+    <div class="standard-card">
+        <span>{{ loop.index }}</span>
+        <p>{{ standard }}</p>
+    </div>
+    {% endfor %}
+</section>
+
+{% endblock %}
+
+

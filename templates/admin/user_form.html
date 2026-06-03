@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin</span>
+    <h1>Add user or caregiver</h1>
+    <p>Create accounts for clients, caregivers, or administrators.</p>
+</div>
+
+<form method="POST" class="contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Full Name</label>
+            <input name="name" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Email</label>
+            <input name="email" type="email" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input name="phone" class="form-control">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Role</label>
+            <select name="role" class="form-select">
+                <option value="client">Client</option>
+                <option value="caregiver">Caregiver</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Address</label>
+            <input name="address" class="form-control">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Emergency Contact Name</label>
+            <input name="emergency_contact_name" class="form-control">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Emergency Contact Phone</label>
+            <input name="emergency_contact_phone" class="form-control">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Preferred Schedule</label>
+            <input name="preferred_schedule" class="form-control">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Temporary Password</label>
+            <input name="password" type="password" class="form-control" required minlength="12">
+            <div class="security-note mt-2">Use at least 12 characters with uppercase, lowercase, number, and symbol.</div>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Care Needs</label>
+            <textarea name="care_needs" class="form-control" rows="4"></textarea>
+        </div>
+        <div class="col-12">
+            <button class="btn btn-primary">Create Account</button>
+            <a class="btn btn-outline-primary" href="/admin/users">Cancel</a>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+

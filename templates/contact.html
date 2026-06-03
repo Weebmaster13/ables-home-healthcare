@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Contact Ables Home Healthcare | Silver Spring, MD{% endblock %}
+{% block meta_description %}Contact Ables Home Healthcare for Skilled and Non-Skilled Nursing Care, client intake, referrals, caregiver applications, and care coordination.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero contact-hero">
+    <span class="eyebrow">Reach out to us</span>
+    <h1>Send us a message</h1>
+    <p>Questions about services, referrals, appointments, or caregiver opportunities? We are ready to help.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="/free-consultation">Become a Client</a>
+        <a class="btn btn-light btn-lg" href="tel:3013262225">Call Now</a>
+    </div>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-7">
+        <form method="POST" class="contact-form premium-form">
+            <div class="form-heading">
+                <span class="eyebrow">Contact form</span>
+                <h2>Tell us what kind of help is needed.</h2>
+                <p>For urgent medical symptoms or emergencies, call 911. This form is for non-emergency service questions, referrals, and care coordination.</p>
+            </div>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Full Name</label>
+                    <input name="name" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Email Address</label>
+                    <input name="email" type="email" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Phone Number</label>
+                    <input name="phone" class="form-control">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Reason for Contact</label>
+                    <select name="reason" class="form-select">
+                        <option>Set an appointment</option>
+                        <option>Send a referral</option>
+                        <option>Ask about services</option>
+                        <option>Caregiver application</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Message</label>
+                    <textarea name="message" rows="5" class="form-control" required></textarea>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary">Submit</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="contact-panel h-100">
+            <h2>Contact Information</h2>
+            <p><strong>Tel:</strong> <a href="tel:3013262225">301-326-2225</a></p>
+            <p><strong>Fax:</strong> 301-326-2270</p>
+            <p><strong>Email:</strong> <a href="mailto:admin@ableshomehealthcare.com">admin@ableshomehealthcare.com</a></p>
+            <p><strong>Address:</strong><br>11510 Georgia Avenue Suite 230<br>Silver Spring MD 20902</p>
+            
+            <p><strong>Hours:</strong><br>Monday-Friday: 9:00 AM - 6:00 PM<br>Saturday-Sunday: 10:00 AM - 4:00 PM</p>
+            <div class="contact-mini-card">
+                <strong>Best next step for new families</strong>
+                <span>Use the client form if you need help choosing services, schedule, or payment questions.</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="row g-4 mt-1">
+    <div class="col-md-4">
+        <div class="contact-route-card">
+            <strong>Need care?</strong>
+            <span>Start with schedule, location, care needs, and timeline.</span>
+            <a href="/free-consultation">Become a Client</a>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="contact-route-card">
+            <strong>Sending a referral?</strong>
+            <span>Share source details, client phone, and care needed.</span>
+            <a href="/referrals">Referral Form</a>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="contact-route-card">
+            <strong>Caregiver applicant?</strong>
+            <span>Tell us about experience, availability, and certifications.</span>
+            <a href="/employment-application">Apply</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

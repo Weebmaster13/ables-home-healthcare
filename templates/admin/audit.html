@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin audit</span>
+    <h1>Audit activity search</h1>
+    <p>Filter security and operational activity by user, action, entity, and date.</p>
+</div>
+
+<section class="content-card mb-4">
+    <form method="GET" class="admin-search-form">
+        <input class="form-control" name="action" value="{{ request.args.get('action', '') }}" placeholder="Action">
+        <input class="form-control" name="user" value="{{ request.args.get('user', '') }}" placeholder="User email">
+        <input class="form-control" name="entity_type" value="{{ request.args.get('entity_type', '') }}" placeholder="Entity type">
+        <input class="form-control" type="date" name="date_from" value="{{ request.args.get('date_from', '') }}">
+        <input class="form-control" type="date" name="date_to" value="{{ request.args.get('date_to', '') }}">
+        <button class="btn btn-primary">Filter</button>
+        <a class="btn btn-outline-primary" href="/admin/audit/export?{{ request.query_string.decode() }}">Export</a>
+    </form>
+</section>
+
+<section class="content-card">
+    <div class="table-toolbar">
+        <div>
+            <h2 class="h4 mb-1">Matching events</h2>
+            <p class="mb-0">Showing up to 500 results.</p>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search visible rows" data-table-search="auditFilterTable">
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle admin-table" id="auditFilterTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td>{{ event.created_at.strftime("%Y-%m-%d %H:%M") if event.created_at else "" }}</td>
+                    <td>{{ event.user.email if event.user else "System / public" }}</td>
+                    <td>{{ event.action }}</td>
+                    <td>{{ event.entity_type or "" }}{% if event.entity_id %} #{{ event.entity_id }}{% endif %}</td>
+                    <td>{{ event.details or "" }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5"><div class="empty-state">No audit events match these filters.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% endblock %}
+

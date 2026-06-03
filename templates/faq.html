@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero faq-hero">
+    <span class="eyebrow">Frequently asked questions</span>
+    <h1>Helpful answers before you begin</h1>
+    <p>Learn how requests, referrals, caregiver assignments, and dashboards work on this site.</p>
+</div>
+
+<div class="accordion shadow-sm" id="faqAccordion">
+    {% set faqs = [
+        ("What kind of care does Ables Home Healthcare provide?", "The site is set up around non-medical home care support such as personal care, companionship, meal preparation, light housekeeping, medication reminders, transportation support, respite care, dementia support, and post-hospital routine help."),
+        ("How do families request care?", "Families can call, use the free consultation form, submit a referral, or create a client account. The expanded intake form now asks about schedule, service address, start date, mobility needs, emergency contact, language preference, and consent."),
+        ("How much does care cost?", "Cost depends on service type, schedule, visit length, frequency, and caregiver availability. Families should request a consultation so the office can prepare guidance for the specific situation."),
+        ("What payment options may families ask about?", "Families can ask about private pay, long-term care insurance, veterans benefits, Medicaid waiver options, and other local payment paths. Eligibility and coverage must be verified before care begins."),
+        ("Is this for emergencies?", "No. This website is not for emergencies or medical advice. For urgent symptoms or immediate danger, call 911 or the appropriate emergency service."),
+        ("Does Medicare pay for non-medical care?", "Medicare usually does not cover non-medical daily living support. Physician-ordered clinical home health is different from non-medical home care."),
+        ("Can caregivers be replaced if the fit is not right?", "Families should contact the office with feedback. The care plan and caregiver match can be reviewed when schedule, personality fit, or care needs change."),
+        ("What happens after a referral is submitted?", "An administrator can review the referral, update status, contact the referral source or family, draft a care plan, and track follow-up from the admin dashboard."),
+        ("What information helps before the first call?", "Helpful details include client name, care address, preferred schedule, start date, daily routine, mobility concerns, diagnosis notes, emergency contact, language preference, and services needed."),
+        ("How does the caregiver application process work?", "Applicants submit experience, availability, certifications, service areas, references, background-check consent, and optional resume/certification files. Admin users can track application status."),
+        ("What if the client needs skilled nursing?", "Call the office to clarify service scope. The website focuses on non-medical home care and distinguishes daily living support from physician-ordered clinical services."),
+        ("How are care plans created?", "Admin users can create a draft care plan that captures service type, schedule, tasks, risks, emergency contacts, caregiver preferences, notes, and status.")
+    ] %}
+    {% for question, answer in faqs %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#faq{{ loop.index }}">
+                {{ question }}
+            </button>
+        </h2>
+        <div id="faq{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#faqAccordion">
+            <div class="accordion-body">
+                {{ answer }}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% endblock %}
+
+

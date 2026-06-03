@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero contact-hero">
+    <span class="eyebrow">Send your referrals</span>
+    <h1>Refer someone for home care support</h1>
+    <p>Share basic information and Ables Home Healthcare will follow up about care availability.</p>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-7">
+        <form method="POST" class="contact-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Referral Source Name</label>
+                    <input name="referral_source" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Referral Source Phone</label>
+                    <input name="source_phone" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Client Name</label>
+                    <input name="client_name" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Client Phone</label>
+                    <input name="client_phone" class="form-control">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Care Needed</label>
+                    <select name="care_needed" class="form-select">
+                        <option>Personal care</option>
+                        <option>Companion care</option>
+                        <option>Respite care</option>
+                        <option>Dementia support</option>
+                        <option>Post-hospital support</option>
+                        <option>24-hour care</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Preferred Follow-Up</label>
+                    <input name="follow_up" class="form-control" placeholder="Morning, afternoon, or date">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" rows="5" class="form-control"></textarea>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary">Submit Referral</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="contact-panel">
+            <h2>Direct referral contact</h2>
+            
+            <p><strong>Phone:</strong><br>(301) 326-2225</p>
+            <p><strong>Email:</strong><br>admin@ableshomehealthcare.com</p>
+            <a class="btn btn-light" href="/download-referral-form">Download Referral Form</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

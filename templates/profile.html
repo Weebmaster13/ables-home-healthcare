@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">My profile</span>
+    <h1>Client care profile</h1>
+    <p>Keep contact, emergency, and care-preference information up to date.</p>
+</div>
+
+<form method="POST" class="contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input name="phone" class="form-control" value="{{ user.phone or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Address</label>
+            <input name="address" class="form-control" value="{{ user.address or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Emergency Contact Name</label>
+            <input name="emergency_contact_name" class="form-control" value="{{ user.emergency_contact_name or '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Emergency Contact Phone</label>
+            <input name="emergency_contact_phone" class="form-control" value="{{ user.emergency_contact_phone or '' }}">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Preferred Schedule</label>
+            <input name="preferred_schedule" class="form-control" value="{{ user.preferred_schedule or '' }}">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Care Needs</label>
+            <textarea name="care_needs" class="form-control" rows="5">{{ user.care_needs or "" }}</textarea>
+        </div>
+        <div class="col-12">
+            <button class="btn btn-primary">Save Profile</button>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+

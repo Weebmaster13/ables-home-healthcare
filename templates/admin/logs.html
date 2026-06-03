@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin logs</span>
+    <h1>Application log viewer</h1>
+    <p>Read recent server log lines without exposing the full filesystem.</p>
+</div>
+
+<section class="content-card mb-4">
+    <form method="GET" class="admin-search-form">
+        <input class="form-control" name="limit" type="number" min="20" max="1000" value="{{ limit }}">
+        <button class="btn btn-primary">Refresh</button>
+        <a class="btn btn-outline-primary" href="/admin/maintenance">Maintenance</a>
+    </form>
+    <p class="mb-0 mt-2"><strong>Log file:</strong> {{ log_path }}</p>
+</section>
+
+<section class="content-card">
+    {% if lines %}
+    <pre class="log-viewer">{% for line in lines %}{{ line }}
+{% endfor %}</pre>
+    {% else %}
+    <div class="empty-state">No log lines found yet.</div>
+    {% endif %}
+</section>
+{% endblock %}
+

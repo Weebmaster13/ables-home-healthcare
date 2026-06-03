@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Become a Client | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Submit client intake details for Skilled or Non-Skilled Nursing Care with Ables Home Healthcare in Maryland.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero contact-hero">
+    <span class="eyebrow">Clients</span>
+    <h1>Become a client with Ables Home Healthcare.</h1>
+    <p>Complete this straightforward intake form. It goes to admin@ableshomehealthcare.com for follow-up.</p>
+</div>
+
+<section class="trust-badge-row">
+    {% for badge in trust_badges %}
+    <div>{{ badge }}</div>
+    {% endfor %}
+</section>
+
+<section class="row g-4">
+    <div class="col-lg-7">
+        <form method="POST" class="contact-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Name: First and Last</label>
+                    <input name="name" class="form-control" autocomplete="name" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Email</label>
+                    <input name="email" type="email" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Telephone Number</label>
+                    <input name="phone" class="form-control" autocomplete="tel" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Client Name / Person Who Needs Care</label>
+                    <input name="care_recipient" class="form-control" placeholder="Parent, spouse, self, client">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">City</label>
+                    <input name="city" class="form-control" placeholder="Baltimore City, Montgomery County, Anne Arundel, etc.">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Service Address</label>
+                    <input name="service_address" class="form-control" placeholder="Street address or neighborhood">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Desired Start Date</label>
+                    <input name="start_date" type="date" class="form-control">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Start Timeline</label>
+                    <select name="start_timeline" class="form-select">
+                        <option>As soon as possible</option>
+                        <option>This week</option>
+                        <option>This month</option>
+                        <option>Planning ahead</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Skilled or Non-Skilled Care</label>
+                    <select name="care_level" class="form-select" required>
+                        <option value="">Choose one</option>
+                        <option>Skilled nursing care</option>
+                        <option>Non-skilled nursing care</option>
+                        <option>Let's Talk!</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Specific Needs</label>
+                    <textarea name="specific_needs" rows="3" class="form-control" required placeholder="What does the client want help with?"></textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Services They Require</label>
+                    <input name="services_needed" class="form-control" required placeholder="Bathing, grooming, skilled nursing, companion care, errands, medication reminders">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Diagnosis of the Client</label>
+                    <textarea name="diagnosis_notes" rows="3" class="form-control" required placeholder="Diagnosis, condition, or reason care is needed"></textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">How Many Hours Per Week?</label>
+                    <input name="hours_per_week" class="form-control" required placeholder="Example: 20 hours per week">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">From What Time to What Time?</label>
+                    <input name="schedule_preference" class="form-control" required placeholder="Example: Monday-Friday, 8 AM to 12 PM">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">How Will They Pay?</label>
+                    <select name="payment_method" class="form-select" required>
+                        <option value="">Choose payment option</option>
+                        <option>Private Pay (Cash or Card)</option>
+                        <option>Long-Term Care Insurance</option>
+                        <option>Medicaid / Medicaid Waiver</option>
+                        <option>Community First Choice (CFC) & Home and Community Based Options Waiver (HCBOW)</option>
+                        <option>Community Personal Assistance Services (CPAS)</option>
+                        <option>Private Insurance</option>
+                        <option>Let's Talk!</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Mobility, Fall Risk, or Supervision Needs</label>
+                    <textarea name="mobility_needs" rows="3" class="form-control" placeholder="Walker, wheelchair, transfer help, memory supervision, fall history"></textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Emergency Contact</label>
+                    <input name="emergency_contact" class="form-control" placeholder="Name and phone">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Preferred Language</label>
+                    <input name="preferred_language" class="form-control" placeholder="English, Spanish, Amharic, etc.">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea name="message" rows="5" class="form-control"></textarea>
+                </div>
+                <div class="col-12">
+                    <div class="form-check consent-check">
+                        <input class="form-check-input" type="checkbox" name="consent_confirmed" value="yes" id="consultConsent" required>
+                        <label class="form-check-label" for="consultConsent">
+                            I confirm this is a non-emergency request and agree to be contacted about care coordination.
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary">Submit Client Information</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="info-box accent-box">
+            <h2 class="h4">What happens after you call?</h2>
+            <div class="compact-steps">
+                {% for step in consultation_steps %}
+                <div>
+                    <strong>{{ step.number }} {{ step.title }}</strong>
+                    <p>{{ step.body }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="info-box mt-4">
+            <h2 class="h4">Important care boundary</h2>
+            <p>This website is for client intake and care coordination inquiries. It is not for emergencies or medical advice.</p>
+        </div>
+        <div class="info-box mt-4">
+            <h2 class="h4">What you get from the call</h2>
+            <ul class="check-list mb-0">
+                {% for item in care_plan_preview %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }} | Ables Home Healthcare{% endblock %}
+{% block meta_description %}{{ page.body }} Request a Become a Client from Ables Home Healthcare.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero services-hero">
+    <span class="eyebrow">{{ page.city }} care support</span>
+    <h1>{{ page.title }}</h1>
+    <p>{{ page.body }}</p>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-7">
+        <div class="content-card">
+            <h2>Non-medical {{ page.service }} near {{ page.city }}</h2>
+            <p>
+                Ables Home Healthcare helps families explore Residential Service Agency-style
+                support for daily routines, family caregiver relief, reminders, errands,
+                companionship, and personal care needs.
+            </p>
+            <p>{{ page.local_detail }}</p>
+            <p>
+                Services depend on assessment, scheduling availability, location, and appropriate
+                non-medical care boundaries. This website is not for emergencies or medical advice.
+            </p>
+            <a class="btn btn-primary" href="/free-consultation">Become a Client</a>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="info-box">
+            <h2 class="h4">Popular services</h2>
+            {% for service in services %}
+            <a class="side-link" href="/services/{{ service.slug }}">{{ service.name }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="process-feature mt-5">
+    <div class="section-heading">
+        <span class="eyebrow">How to get started</span>
+        <h2>A clear process for families in {{ page.city }}.</h2>
+    </div>
+    <div class="process-grid">
+        {% for step in consultation_steps %}
+        <div class="process-step">
+            <span>{{ step.number }}</span>
+            <h3>{{ step.title }}</h3>
+            <p>{{ step.body }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}
+
+
+

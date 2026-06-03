@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Login</h2>
+
+<form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="email" class="form-control mb-2" placeholder="Email">
+    <input name="password" type="password" class="form-control mb-2" placeholder="Password">
+    <input name="recovery_code" class="form-control mb-2" placeholder="Admin recovery code, if enabled" autocomplete="one-time-code">
+    <button class="btn btn-primary">Login</button>
+    <a class="btn btn-link" href="/auth/forgot-password">Forgot password?</a>
+</form>
+{% endblock %}
+
+

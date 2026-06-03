@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Appointment</span>
+    <h1>Edit appointment request</h1>
+    <p>Update the requested date, time, service, and notes.</p>
+</div>
+
+<form method="POST" class="contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="form-label">Date</label>
+    <input name="date" type="date" class="form-control mb-3" value="{{ appointment.date }}" required>
+    <label class="form-label">Time</label>
+    <input name="time" type="time" class="form-control mb-3" value="{{ appointment.time }}" required>
+    <label class="form-label">Service Type</label>
+    <select name="service_type" class="form-select mb-3">
+        {% for service in ["Personal Care", "Companion Care", "Respite Care", "Dementia and Alzheimer's Support", "Post-Hospital Support", "Live-In and 24-Hour Care"] %}
+        <option {% if appointment.service_type == service %}selected{% endif %}>{{ service }}</option>
+        {% endfor %}
+    </select>
+    <label class="form-label">Notes</label>
+    <textarea name="notes" class="form-control mb-3" rows="5">{{ appointment.notes or "" }}</textarea>
+    <button class="btn btn-primary">Save Appointment</button>
+</form>
+
+{% endblock %}
+
+

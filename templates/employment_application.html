@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero careers-hero">
+    <span class="eyebrow">Looking for work?</span>
+    <h1>CNA, LPN, or RN? Apply to work with Ables Home Healthcare.</h1>
+    <p>This is a simple work application. You do not need to create a login account.</p>
+</div>
+
+{% if blocked_application %}
+<div class="alert alert-warning">
+    This application is for CNA, LPN, and RN caregivers right now. Please call the office at
+    <a href="tel:3013262225">301-326-2225</a> so we can review your situation.
+</div>
+{% endif %}
+
+<form method="POST" class="contact-form" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Full Name</label>
+            <input name="name" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Email</label>
+            <input name="email" type="email" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input name="phone" class="form-control" required>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Address</label>
+            <input name="address" class="form-control">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Are you a CNA, LPN, or RN?</label>
+            <select name="credential_type" class="form-select" required>
+                <option value="">Choose one</option>
+                <option>CNA</option>
+                <option>LPN</option>
+                <option>RN</option>
+                <option>No</option>
+                <option>Other</option>
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Availability</label>
+            <input name="availability" class="form-control" placeholder="Weekdays, evenings, weekends">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Years of Experience</label>
+            <input name="years_experience" class="form-control" placeholder="2 years, 5+ years, new caregiver">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Weekday Availability</label>
+            <input name="weekday_availability" class="form-control" placeholder="Monday-Friday mornings, evenings, overnight">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Weekend Availability</label>
+            <input name="weekend_availability" class="form-control" placeholder="Saturday, Sunday, flexible">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Certifications or License Details</label>
+            <input name="certifications" class="form-control" placeholder="CNA, LPN, RN, CPR, First Aid, license number if available">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Transportation</label>
+            <select name="transportation" class="form-select">
+                <option>Reliable personal transportation</option>
+                <option>Public transportation</option>
+                <option>Needs route coordination</option>
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Preferred Service Areas</label>
+            <input name="preferred_service_areas" class="form-control" placeholder="Baltimore City, Montgomery County, Anne Arundel, Howard">
+        </div>
+        <div class="col-12">
+            <label class="form-label">References</label>
+            <textarea name="applicant_references" class="form-control" rows="3" placeholder="Names, relationship, and phone/email if available"></textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Caregiving Experience</label>
+            <textarea name="experience" class="form-control" rows="5" required></textarea>
+        </div>
+        <div class="col-12">
+            <div class="application-requirements">
+                <div class="form-heading compact-heading">
+                    <span class="eyebrow">Caregiver Requirements</span>
+                    <h2>Documents And Requirements Needed</h2>
+                    <p>Check the items you already have. Items not uploaded now can be reviewed by the office during hiring.</p>
+                </div>
+                <div class="requirement-check-grid">
+                    <label><input type="checkbox" name="requirements" value="Driver's license or ID"> Driver's License / ID</label>
+                    <label><input type="checkbox" name="requirements" value="Social Security Card"> Social Security Card</label>
+                    <label><input type="checkbox" name="requirements" value="CPR card"> CPR Card</label>
+                    <label><input type="checkbox" name="requirements" value="First Aid card"> First Aid Card</label>
+                    <label><input type="checkbox" name="requirements" value="PPD test or chest x-ray"> PPD Test Or Chest X-Ray</label>
+                    <label><input type="checkbox" name="requirements" value="MD License or Waiver"> MD License Or Waiver</label>
+                    <label><input type="checkbox" name="requirements" value="Work authorization documents"> Work Authorization Docs (Green Card / US Birth Certificate / Other)</label>
+                    <label><input type="checkbox" name="requirements" value="Means to work"> Means To Work</label>
+                    <label><input type="checkbox" name="requirements" value="Hepatitis B shots or waiver"> Hepatitis B Shots / Waiver</label>
+                    <label><input type="checkbox" name="requirements" value="Passport size picture"> Passport Size Picture</label>
+                    <label><input type="checkbox" name="requirements" value="Background check after hire"> Background Check (After Hire)</label>
+                </div>
+            </div>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Resume, Certification, Or Requirement File</label>
+            <input name="resume" type="file" class="form-control" accept=".pdf,.doc,.docx,.txt">
+            <div class="form-text">Maximum file size: {{ max_upload_mb }} MB. Accepted files: PDF, DOC, DOCX, TXT.</div>
+        </div>
+        <div class="col-12">
+            <div class="form-check consent-check">
+                <input class="form-check-input" type="checkbox" name="background_check_consent" value="yes" id="backgroundConsent" required>
+                <label class="form-check-label" for="backgroundConsent">
+                    I understand caregiver roles may require screening, reference checks, and background check authorization before placement.
+                </label>
+            </div>
+        </div>
+        <div class="col-12">
+            <button class="btn btn-primary">Submit Application</button>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin backups</span>
+    <h1>Production backups</h1>
+    <p>Create and download full backups that include the local database and uploaded documents.</p>
+</div>
+
+<section class="portal-help-strip compact mb-4">
+    <div>
+        <strong>Backup now</strong>
+        <span>Use this before major changes and on a regular schedule. For deployed PostgreSQL, also configure host-level automated backups.</span>
+    </div>
+    <form method="POST" action="/admin/backups/create">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-light btn-sm">Create Full Backup</button>
+    </form>
+    <form method="POST" action="/admin/backups/cleanup">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="keep" value="10">
+        <button class="btn btn-light btn-sm">Keep Latest 10</button>
+    </form>
+</section>
+
+<section class="content-card">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Backup files</span>
+            <h2 class="h4 mb-0">Available downloads</h2>
+        </div>
+        <div class="portal-actions">
+            <a class="btn btn-outline-primary btn-sm" href="/admin/reports">Reports</a>
+            <a class="btn btn-outline-primary btn-sm" href="/admin/maintenance">Maintenance</a>
+        </div>
+    </div>
+    <div class="clean-list">
+        {% for backup in backups %}
+        <div>
+            <strong>{{ backup.name }}</strong>
+            <span>{{ (backup.stat().st_size / 1024)|round(1) }} KB</span>
+            <div class="portal-actions">
+                <a href="/admin/backups/{{ backup.name }}/download">Download backup</a>
+                <form method="POST" action="/admin/backups/{{ backup.name }}/delete">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-danger btn-sm">Delete</button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">No backups created yet.</div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}
+

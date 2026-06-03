@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Caregiver dashboard</span>
+    <h1>Welcome, {{ user.name }}</h1>
+    <p>Start with today, review client needs, save observations, and keep visit status clear for the office.</p>
+    <form method="POST" action="/auth/logout" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-primary">Log Out</button>
+    </form>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card">
+        <span>Today</span>
+        <strong>{{ caregiver_stats.today }}</strong>
+    </div>
+    <div class="stat-card">
+        <span>Upcoming</span>
+        <strong>{{ caregiver_stats.upcoming }}</strong>
+    </div>
+    <div class="stat-card">
+        <span>Needs notes</span>
+        <strong>{{ caregiver_stats.needs_notes }}</strong>
+    </div>
+    <div class="stat-card">
+        <span>Completed</span>
+        <strong>{{ caregiver_stats.completed }}</strong>
+    </div>
+    <a class="stat-card stat-link" href="/caregiver/schedule">
+        <span>Schedule</span>
+        <strong>Go</strong>
+    </a>
+</section>
+
+<section class="portal-command-grid">
+    <div class="content-card">
+        <div class="table-toolbar">
+            <div>
+                <span class="eyebrow">Start here</span>
+                <h2 class="h4 mb-0">Today's visits</h2>
+            </div>
+            <a href="/caregiver/schedule" class="btn btn-primary btn-sm">Open Schedule</a>
+        </div>
+
+        {% if today_appointments %}
+        <div class="portal-task-list">
+            {% for item in today_appointments %}
+            <article class="portal-task-card">
+                <div class="visit-card-header">
+                    <strong>{{ item.client.name if item.client else "Client not linked" }}</strong>
+                    <span class="status-pill status-{{ item.status }}">{{ item.status }}</span>
+                </div>
+                <div class="task-meta">
+                    <span><strong>Time:</strong> {{ item.time }}</span>
+                    <span><strong>Service:</strong> {{ item.service_type }}</span>
+                    <span><strong>Address:</strong> {{ item.service_address or (item.client.address if item.client else "Not added") }}</span>
+                    <span><strong>Emergency:</strong> {{ item.emergency_contact or (item.client.emergency_contact_name if item.client else "Ask office") }}</span>
+                </div>
+                {% if item.notes %}
+                <p><strong>Client notes:</strong> {{ item.notes }}</p>
+                {% endif %}
+                <div class="portal-actions">
+                    <a class="btn btn-outline-primary btn-sm" href="/caregiver/schedule">Add Notes</a>
+                    <a class="btn btn-outline-primary btn-sm" href="tel:3013262225">Call Office</a>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">No visits scheduled for today. Check upcoming assignments or contact the office if you expected one.</div>
+        {% endif %}
+    </div>
+
+    <div class="content-card">
+        <span class="eyebrow">Visit quality</span>
+        <h2 class="h4">Caregiver checklist</h2>
+        <div class="portal-checklist">
+            <div>
+                <span></span>
+                <p><strong>Confirm the client</strong> Check name, service, address, time, and assignment status.</p>
+            </div>
+            <div>
+                <span></span>
+                <p><strong>Review safety details</strong> Read mobility needs, notes, routines, and emergency contacts.</p>
+            </div>
+            <div>
+                <span></span>
+                <p><strong>Document clearly</strong> Save useful observations before marking a visit complete.</p>
+            </div>
+            <div>
+                <span></span>
+                <p><strong>Escalate concerns</strong> Call the office for schedule, safety, or care-plan questions.</p>
+            </div>
+        </div>
+        <a class="btn btn-outline-primary mt-3" href="/care-standards">Review Standards</a>
+    </div>
+</section>
+
+<section class="portal-quick-actions mt-4">
+    <a href="/caregiver/schedule">
+        <strong>Full schedule</strong>
+        <span>All assigned visits, notes, and completion tools.</span>
+    </a>
+    <a href="tel:3013262225">
+        <strong>Call office</strong>
+        <span>Use phone support for urgent questions.</span>
+    </a>
+    <a href="/messages">
+        <strong>Message office</strong>
+        <span>Send schedule, visit, or care-plan questions.</span>
+    </a>
+    <a href="/caregiver/availability">
+        <strong>Availability</strong>
+        <span>Update days, times, and service areas.</span>
+    </a>
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Reminders</span>
+            <h2 class="h4 mb-0">Visit attention list</h2>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="/caregiver/schedule">Full Schedule</a>
+    </div>
+    <div class="portal-reminder-grid">
+        <div>
+            <strong>Today</strong>
+            <span>{{ reminders.today|length }}</span>
+        </div>
+        <div>
+            <strong>Tomorrow</strong>
+            <span>{{ reminders.tomorrow|length }}</span>
+        </div>
+        <div>
+            <strong>Overdue notes</strong>
+            <span>{{ reminders.overdue|length }}</span>
+        </div>
+    </div>
+</section>
+
+<section class="content-card mt-4">
+    <div class="table-toolbar">
+        <div>
+            <span class="eyebrow">Assignments</span>
+            <h2 class="h4 mb-0">Search assigned visits</h2>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search client, service, status, notes" data-card-search="caregiverAssignmentCards">
+    </div>
+
+    {% if appointments %}
+    <div class="visit-card-list" id="caregiverAssignmentCards">
+        {% for item in appointments %}
+        <article class="visit-card polished-visit-card portal-task-card" data-search-card>
+            <div class="visit-card-header">
+                <strong>{{ item.service_type }}</strong>
+                <span class="status-pill status-{{ item.status }}">{{ item.status }}</span>
+            </div>
+            <div class="task-meta">
+                <span><strong>When:</strong> {{ item.date }} at {{ item.time }}</span>
+                <span><strong>Client:</strong> {{ item.client.name if item.client else "Client not linked" }}</span>
+                <span><strong>Address:</strong> {{ item.service_address or (item.client.address if item.client else "Not added") }}</span>
+                <span><strong>Language:</strong> {{ item.preferred_language or "English" }}</span>
+            </div>
+            {% if item.mobility_needs %}
+            <p><strong>Mobility or safety:</strong> {{ item.mobility_needs }}</p>
+            {% endif %}
+            <p><strong>Client notes:</strong> {{ item.notes or "No client notes provided." }}</p>
+            {% if item.caregiver_notes %}
+            <p><strong>Your notes:</strong> {{ item.caregiver_notes }}</p>
+            {% endif %}
+            <div class="portal-actions">
+                <a href="/caregiver/schedule" class="btn btn-outline-primary btn-sm">Open Visit</a>
+                <a href="tel:3013262225" class="btn btn-outline-primary btn-sm">Call Office</a>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No appointments assigned yet.</div>
+    {% endif %}
+</section>
+
+<section class="portal-help-strip mt-4">
+    <div>
+        <strong>Safety concern during a visit?</strong>
+        <span>Call the office right away. For emergencies, call 911 first.</span>
+    </div>
+    <a class="btn btn-light btn-sm" href="tel:3013262225">(301) 326-2225</a>
+</section>
+
+{% endblock %}
+
+

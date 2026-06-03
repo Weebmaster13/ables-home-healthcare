@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin security</span>
+    <h1>Security monitor</h1>
+    <p>Review account lockouts, failed login counters, and recent audit events.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Locked Accounts</span><strong>{{ locked_users|length }}</strong></div>
+    <div class="stat-card"><span>Failed Login Counters</span><strong>{{ failed_users|length }}</strong></div>
+    <div class="stat-card"><span>Recent Events</span><strong>{{ recent_events|length }}</strong></div>
+    <div class="stat-card"><span>Active Recovery Codes</span><strong>{{ active_recovery_codes }}</strong></div>
+</section>
+
+<section class="content-card mb-4">
+    <div class="table-toolbar">
+        <div>
+            <h2 class="h4 mb-1">Admin recovery codes</h2>
+            <p class="mb-0">Generate one-time backup codes for admin login. Save new codes immediately because they are shown only once.</p>
+        </div>
+        <form method="POST" action="/admin/security/recovery-codes">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-primary">Generate New Codes</button>
+        </form>
+    </div>
+    <p class="mb-2"><strong>Unused:</strong> {{ active_recovery_codes }} | <strong>Used:</strong> {{ used_recovery_codes }}</p>
+    {% if recovery_codes_required %}
+    <div class="alert alert-info">Admin recovery-code login protection is currently enabled.</div>
+    {% else %}
+    <div class="alert alert-secondary">Admin recovery-code login protection is currently turned off. Admins can log in with email and password only.</div>
+    {% endif %}
+    {% if recovery_codes_required and active_recovery_codes == 0 %}
+    <div class="alert alert-warning">This admin account does not have active recovery codes yet. Generate codes to require backup-code protection at login.</div>
+    {% endif %}
+    {% if new_recovery_codes %}
+    <div class="recovery-code-grid">
+        {% for code in new_recovery_codes %}
+        <code>{{ code }}</code>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
+<section class="content-card mb-4">
+    <div class="table-toolbar">
+        <div>
+            <h2 class="h4 mb-1">Accounts needing review</h2>
+            <p class="mb-0">Users shown here have failed login counters or a temporary lockout.</p>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search accounts" data-table-search="securityUsersTable">
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle admin-table" id="securityUsersTable">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Failed Attempts</th>
+                    <th>Locked Until</th>
+                    <th>Last Login</th>
+                    <th>Password Changed</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in failed_users %}
+                <tr>
+                    <td>{{ account.name }}</td>
+                    <td>{{ account.email }}</td>
+                    <td>{{ account.role }}</td>
+                    <td>{{ account.failed_login_count }}</td>
+                    <td>{{ account.locked_until or "" }}</td>
+                    <td>{{ account.last_login_at or "" }}</td>
+                    <td>{{ account.password_changed_at or "" }}</td>
+                    <td>
+                        <form method="POST" action="/admin/security/users/{{ account.id }}/unlock">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-sm btn-outline-primary">Reset Lockout</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8"><div class="empty-state">No failed login counters right now.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="content-card">
+    <div class="table-toolbar">
+        <div>
+            <h2 class="h4 mb-1">Recent audit events</h2>
+            <p class="mb-0">Monitor login, password, account, care plan, and admin activity.</p>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search events" data-table-search="auditEventsTable">
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle admin-table" id="auditEventsTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in recent_events %}
+                <tr>
+                    <td>{{ event.created_at.strftime("%Y-%m-%d %H:%M") if event.created_at else "" }}</td>
+                    <td>{{ event.user.email if event.user else "System / public" }}</td>
+                    <td>{{ event.action }}</td>
+                    <td>{{ event.entity_type }} #{{ event.entity_id }}</td>
+                    <td>{{ event.details }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5"><div class="empty-state">No audit events yet.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% endblock %}
+

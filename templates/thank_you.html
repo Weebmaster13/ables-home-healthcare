@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="content-card text-center">
+    <span class="eyebrow">Thank you</span>
+    {% if reason == "referral" %}
+        <h1>Referral received</h1>
+        <p>Our office team will review the referral and follow up as soon as possible.</p>
+    {% elif reason == "consultation" %}
+        <h1>Consultation request received</h1>
+        <p>Our office team will review your request and follow up about the best next step for care.</p>
+    {% elif reason == "application" %}
+        <h1>Application received</h1>
+        <p>Thank you for your interest in joining Ables Home Healthcare.</p>
+    {% else %}
+        <h1>Message received</h1>
+        <p>A care coordinator will contact you soon.</p>
+    {% endif %}
+    <a class="btn btn-primary" href="/">Return Home</a>
+</div>
+
+{% endblock %}
+
+

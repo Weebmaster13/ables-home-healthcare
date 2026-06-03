@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing and Payment Guidance | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Learn about Private Pay, CFC, HCBOW, CPAS, Private Insurance, and payment options for Ables Home Healthcare services.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Pricing and payment</span>
+    <h1>Understand home care costs before committing.</h1>
+    <p>Non-medical care pricing depends on the schedule, services, and level of support needed.</p>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-5">
+        <div class="contact-panel">
+            <h2>Request a custom quote</h2>
+            <p>Exact cost should be discussed after a consultation because every care situation is different.</p>
+            <p><strong>Tel:</strong><br>301-326-2225</p>
+            <a class="btn btn-light" href="/free-consultation">Become a Client</a>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="content-card">
+            <h2>We Accept</h2>
+            <ul class="check-list">
+                <li>Community First Choice (CFC) &amp; Home and Community Based Options Waiver (HCBOW)</li>
+                <li>Community Personal Assistance Services (CPAS)</li>
+                <li>Private Pay (Cash or Card)</li>
+                <li>Private Insurance</li>
+                <li>Let's Talk! if you are not sure which option applies.</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="mt-5">
+    <div class="accordion shadow-sm" id="paymentFaqs">
+        {% for item in payment_faqs %}
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#payment{{ loop.index }}">
+                    {{ item.question }}
+                </button>
+            </h2>
+            <div id="payment{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#paymentFaqs">
+                <div class="accordion-body">{{ item.answer }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}
+
+
+

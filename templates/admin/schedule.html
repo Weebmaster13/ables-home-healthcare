@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin scheduling</span>
+    <h1>Schedule board</h1>
+    <p>Review visits by date, watch unassigned care requests, and assign caregivers from suggested matches.</p>
+</div>
+
+<input type="hidden" id="scheduleCsrfToken" value="{{ csrf_token() }}">
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Today</span><strong>{{ reminders.today|length }}</strong></div>
+    <div class="stat-card"><span>Tomorrow</span><strong>{{ reminders.tomorrow|length }}</strong></div>
+    <div class="stat-card"><span>Overdue</span><strong>{{ reminders.overdue|length }}</strong></div>
+    <div class="stat-card"><span>Unassigned</span><strong>{{ unassigned|length }}</strong></div>
+    <div class="stat-card"><span>Caregivers</span><strong>{{ caregivers|length }}</strong></div>
+    <a class="stat-card stat-link" href="/admin/caregiver-conflicts"><span>Conflicts</span><strong>{{ double_bookings|length }}</strong></a>
+    <a class="stat-card stat-link" href="/admin/caregiver-conflicts"><span>Missing Notes</span><strong>{{ missing_notes|length }}</strong></a>
+</section>
+
+<section class="portal-help-strip compact mb-4">
+    <div>
+        <strong>Reminder emails and SMS</strong>
+        <span>Send today or tomorrow visit reminders to assigned clients and caregivers. SMS sends only when configured.</span>
+    </div>
+    <div class="portal-actions">
+        <form method="POST" action="/admin/reminders/send/today">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-light btn-sm">Send Today</button>
+        </form>
+        <form method="POST" action="/admin/reminders/send/tomorrow">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-light btn-sm">Send Tomorrow</button>
+        </form>
+    </div>
+</section>
+
+<section class="schedule-view-tabs mb-4">
+    <a class="{% if current_view == 'all' %}is-active{% endif %}" href="/admin/schedule?view=all">All</a>
+    <a class="{% if current_view == 'week' %}is-active{% endif %}" href="/admin/schedule?view=week">This Week</a>
+    <a class="{% if current_view == 'month' %}is-active{% endif %}" href="/admin/schedule?view=month">This Month</a>
+</section>
+
+<section class="schedule-board-grid">
+    <div class="content-card">
+        <div class="table-toolbar">
+            <div>
+                <span class="eyebrow">Matching queue</span>
+                <h2 class="h4 mb-0">Unassigned visits</h2>
+            </div>
+            <a class="btn btn-outline-primary btn-sm" href="/admin/appointments">Appointment Table</a>
+        </div>
+
+        {% if unassigned %}
+        <div class="visit-card-list">
+            {% for appointment in unassigned %}
+            <article class="visit-card polished-visit-card">
+                <div class="visit-card-header">
+                    <strong>{{ appointment.client.name if appointment.client else "Unknown client" }}</strong>
+                    <span class="status-pill status-{{ appointment.status }}">{{ appointment.status }}</span>
+                </div>
+                <div class="visit-card-body">
+                    <div class="task-meta mb-3">
+                        <span><strong>When:</strong> {{ appointment.date }} at {{ appointment.time }}</span>
+                        <span><strong>Service:</strong> {{ appointment.service_type }}</span>
+                        <span><strong>Address:</strong> {{ appointment.service_address or "Not added" }}</span>
+                        <span><strong>Preference:</strong> {{ appointment.schedule_preference or "None" }}</span>
+                    </div>
+                    {% if appointment.notes %}<p><strong>Notes:</strong> {{ appointment.notes }}</p>{% endif %}
+                    <form method="POST" action="/admin/appointment/{{ appointment.id }}/repeat" class="recurring-form advanced-recurring-form mb-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <label class="form-label">Every</label>
+                        <select name="interval_weeks" class="form-select form-select-sm">
+                            <option value="1">1 week</option>
+                            <option value="2">2 weeks</option>
+                            <option value="3">3 weeks</option>
+                            <option value="4">4 weeks</option>
+                        </select>
+                        <label class="form-label">Visits</label>
+                        <select name="count" class="form-select form-select-sm">
+                            <option value="4">4</option>
+                            <option value="8">8</option>
+                            <option value="12">12</option>
+                            <option value="26">26</option>
+                            <option value="52">52</option>
+                        </select>
+                        <label class="form-label">End date</label>
+                        <input name="end_date" type="date" class="form-control form-control-sm">
+                        <button class="btn btn-outline-primary btn-sm">Create</button>
+                    </form>
+                    {% if appointment.recurring_group_id %}
+                    <div class="portal-actions mb-3">
+                        <form method="POST" action="/admin/recurring/{{ appointment.recurring_group_id }}/pause">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-outline-danger btn-sm">Pause Series</button>
+                        </form>
+                        <form method="POST" action="/admin/recurring/{{ appointment.recurring_group_id }}/resume">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-outline-primary btn-sm">Resume Series</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                    <div class="match-list">
+                        <span class="match-label">Best caregiver matches</span>
+                        {% for match in match_suggestions.get(appointment.id, []) %}
+                        <form method="POST" action="/admin/appointment/{{ appointment.id }}/assign" class="match-card">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="caregiver_id" value="{{ match.caregiver.id }}">
+                            <div>
+                                <strong>{{ match.caregiver.name }}</strong>
+                                <span>{{ match.score }}% match</span>
+                                <small>{{ match.reasons|join("; ") }}{% if match.warnings %} | {{ match.warnings|join("; ") }}{% endif %}</small>
+                            </div>
+                            <button class="btn btn-outline-primary btn-sm">Assign</button>
+                        </form>
+                        {% else %}
+                        <div class="empty-state">No caregiver accounts yet. Add caregivers first.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">No unassigned visits right now.</div>
+        {% endif %}
+    </div>
+
+    <div class="content-card">
+        <div class="table-toolbar">
+            <div>
+                <span class="eyebrow">Calendar</span>
+                <h2 class="h4 mb-0">Visits by date</h2>
+            </div>
+            <input class="form-control table-search" type="search" placeholder="Search schedule" data-card-search="scheduleDayCards">
+        </div>
+
+        <div class="schedule-day-list" id="scheduleDayCards">
+            {% for day, items in schedule_days.items() %}
+            <article class="schedule-day-card" data-search-card data-schedule-date="{{ day }}">
+                <div class="schedule-day-header">
+                    <strong>{{ day }}</strong>
+                    <span>{{ items|length }} visit{{ "" if items|length == 1 else "s" }}</span>
+                </div>
+                <div class="schedule-visit-list">
+                    {% for item in items %}
+                    <div class="schedule-visit-item" draggable="true" data-appointment-id="{{ item.id }}" data-current-time="{{ item.time }}">
+                        <span class="status-pill status-{{ item.status }}">{{ item.status }}</span>
+                        <strong>{{ item.time }} | {{ item.service_type }}</strong>
+                        <p>{{ item.client.name if item.client else "Unknown client" }}{% if item.caregiver %} with {{ item.caregiver.name }}{% else %} | Unassigned{% endif %}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+            {% else %}
+            <div class="empty-state">No appointments scheduled yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+

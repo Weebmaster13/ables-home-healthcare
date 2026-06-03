@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero services-hero">
+    <span class="eyebrow">Ables care service</span>
+    <h1>{{ service.name }}</h1>
+    <p>{{ service.summary }}</p>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-8">
+        <div class="content-card">
+            <h2>How this service helps</h2>
+            <p>
+                Ables Home Healthcare builds care around the client's daily routines, family
+                expectations, and safety needs. This service can be scheduled as part-time,
+                recurring, temporary, weekend, evening, or extended care when appropriate.
+            </p>
+
+            <h3>Service includes</h3>
+            <ul class="check-list">
+                {% for item in service.details %}
+                    <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+
+            <h3>Care coordination</h3>
+            <p>
+                Families can reach out by phone, submit a referral, or create a client account
+                to request care. Admin staff can review requests and assign caregivers through
+                the dashboard.
+            </p>
+        </div>
+
+        <div class="home-story mt-4">
+            <div class="story-copy">
+                <span class="eyebrow">Comfort at home</span>
+                <h2>Care should feel organized, calm, and human.</h2>
+                <p>
+                    This service can be combined with other support options as client needs change.
+                    The goal is to reduce family stress while helping the client maintain dignity
+                    and routine at home.
+                </p>
+            </div>
+            <div class="story-photo-grid compact-story">
+                <div class="story-photo story-photo-main"></div>
+                <div class="story-note">
+                    <strong>Ask about flexible scheduling.</strong>
+                    <span>Daytime, evening, weekend, and extended support options may be discussed.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="info-box accent-box">
+            <h2 class="h4">Request this service</h2>
+            <p>Call Ables Home Healthcare or send a message to discuss care needs.</p>
+            <p class="mb-1"><strong>Phone:</strong> (301) 326-2225</p>
+            <p><strong>Fax:</strong> 301-326-2270</p>
+            <p><strong>Email:</strong> admin@ableshomehealthcare.com</p>
+            <a class="btn btn-primary" href="/contact">Set an Appointment</a>
+        </div>
+
+        <div class="info-box mt-4">
+            <h2 class="h4">Other services</h2>
+            {% for item in services %}
+                <a class="side-link" href="/services/{{ item.slug }}">{{ item.name }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

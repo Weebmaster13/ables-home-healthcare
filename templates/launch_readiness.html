@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Launch Readiness | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Production readiness checklist for Ables Home Healthcare, including photos, email delivery, HTTPS, privacy review, database backups, and confirmed service details.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Launch readiness</span>
+    <h1>What needs to be finished before this becomes sell-ready.</h1>
+    <p>A clear checklist for production hosting, real business assets, privacy review, and operational confidence.</p>
+</div>
+
+<section class="readiness-strip">
+    <div>
+        <span class="eyebrow">Configuration status</span>
+        <h2>Technical launch signals</h2>
+        <p>These checks read the current app configuration and show what is still missing for a real production website.</p>
+    </div>
+    <a class="btn btn-primary" href="/sitemap.xml">View Sitemap</a>
+</section>
+
+<section class="launch-status-grid">
+    {% for item in launch_status %}
+    <div class="launch-status-card {% if item.ready %}is-ready{% else %}needs-work{% endif %}">
+        <span>{{ item.status }}</span>
+        <h2>{{ item.label }}</h2>
+        <p>{{ item.body }}</p>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="readiness-grid">
+    {% for item in readiness_items %}
+    <div class="readiness-card">
+        <span>{{ item.status }}</span>
+        <h2>{{ item.title }}</h2>
+        <p>{{ item.body }}</p>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="mission-card mt-4">
+    <div class="row g-4 align-items-center">
+        <div class="col-lg-8">
+            <h2>Best next production move</h2>
+            <p class="mb-0">Set SMTP email, deploy with HTTPS, replace development photos with licensed/real business photos, and confirm all healthcare wording before collecting real client data.</p>
+        </div>
+        <div class="col-lg-4 text-lg-end">
+            <a class="btn btn-light" href="/contact">Review Contact Flow</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

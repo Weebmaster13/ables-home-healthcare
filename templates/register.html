@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Secure registration</span>
+    <h1>Create your client portal account</h1>
+    <p>Choose a password that is hard for others to guess. The checker below will tell you whether it is safe enough to use.</p>
+</div>
+
+<form method="POST" class="contact-form auth-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Full Name</label>
+            <input name="name" class="form-control" required autocomplete="name">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Email</label>
+            <input name="email" type="email" class="form-control" required autocomplete="email">
+        </div>
+        <div class="col-md-6">
+            {% set password_id = "registerPassword" %}
+            {% set password_label = "Password" %}
+            {% set autocomplete = "new-password" %}
+            {% include "partials/password_helper.html" %}
+        </div>
+        <div class="col-md-6">
+            <div class="password-row">
+                <label class="form-label" for="registerConfirmPassword">Confirm Password</label>
+                <button class="password-toggle" type="button" data-password-toggle="registerConfirmPassword">Show</button>
+            </div>
+            <input id="registerConfirmPassword" name="confirm_password" type="password" class="form-control" required minlength="12" autocomplete="new-password">
+            <div class="password-status" data-password-match="registerPassword">Passwords must match.</div>
+        </div>
+        <div class="col-12">
+            <div class="security-note">
+                Use a unique password you do not use anywhere else. A longer phrase with symbols is safer than a short clever word.
+            </div>
+        </div>
+        <div class="col-12">
+            <button class="btn btn-primary">Create Account</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+

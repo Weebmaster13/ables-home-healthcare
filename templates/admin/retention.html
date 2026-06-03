@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin retention</span>
+    <h1>Data retention controls</h1>
+    <p>Clean old operational records according to the company retention policy.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Notifications</span><strong>{{ counts.notifications }}</strong></div>
+    <div class="stat-card"><span>Closed Messages</span><strong>{{ counts.closed_messages }}</strong></div>
+    <div class="stat-card"><span>Audit Logs</span><strong>{{ counts.audit_logs }}</strong></div>
+    <div class="stat-card"><span>Backups</span><strong>{{ counts.backups }}</strong></div>
+</section>
+
+<section class="content-card">
+    <form method="POST" class="contact-form compact-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Target</label>
+        <select name="target" class="form-select" required>
+            <option value="notifications">Old notification logs</option>
+            <option value="closed_messages">Closed portal messages</option>
+            <option value="audit_logs">Old audit logs</option>
+            <option value="backups">Old backup files</option>
+        </select>
+        <label class="form-label">Older than days</label>
+        <input name="days" type="number" min="30" max="3650" value="365" class="form-control">
+        <label class="form-label">Backups to keep</label>
+        <input name="keep" type="number" min="1" max="50" value="10" class="form-control">
+        <button class="btn btn-outline-danger mt-3">Run Retention Cleanup</button>
+    </form>
+</section>
+{% endblock %}
+

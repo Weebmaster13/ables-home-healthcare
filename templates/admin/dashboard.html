@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin dashboard</span>
+    <h1>Admin dashboard</h1>
+    <p class="lead">Welcome Admin</p>
+    <p>Monitor users, non-medical care requests, appointments, inquiries, and referrals.</p>
+    <form method="POST" action="/auth/logout" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-primary">Log Out</button>
+    </form>
+</div>
+
+<section class="dashboard-stats">
+    <div class="stat-card"><span>Users</span><strong>{{ stats.users }}</strong></div>
+    <div class="stat-card"><span>Appointments</span><strong>{{ stats.appointments }}</strong></div>
+    <div class="stat-card"><span>Pending</span><strong>{{ stats.pending }}</strong></div>
+    <div class="stat-card"><span>Inquiries</span><strong>{{ stats.inquiries }}</strong></div>
+    <div class="stat-card"><span>Referrals</span><strong>{{ stats.referrals }}</strong></div>
+    <div class="stat-card"><span>Care Plans</span><strong>{{ stats.care_plans }}</strong></div>
+    <div class="stat-card"><span>Applications</span><strong>{{ stats.applications }}</strong></div>
+    <a class="stat-card stat-link" href="/admin/messages"><span>Messages</span><strong>{{ stats.messages }}</strong></a>
+    <a class="stat-card stat-link" href="/admin/work-queue"><span>Open Work</span><strong>{{ stats.open_work }}</strong></a>
+</section>
+
+<section class="admin-search-panel mt-4" aria-labelledby="adminSearchHeading">
+    <div>
+        <span class="eyebrow">Find anything</span>
+        <h2 id="adminSearchHeading">Admin global search</h2>
+        <p>Search clients, caregivers, inquiries, referrals, applications, care plans, and appointments from one place.</p>
+    </div>
+    <form method="GET" action="/admin/search" class="admin-search-form" role="search">
+        <label class="visually-hidden" for="adminDashboardSearch">Search admin records</label>
+        <input id="adminDashboardSearch" name="q" class="form-control" placeholder="Name, email, phone, status, service, city">
+        <button class="btn btn-primary">Search</button>
+    </form>
+</section>
+
+<section class="readiness-strip mt-4">
+    <div>
+        <span class="eyebrow">Production status</span>
+        <h2>Email delivery is {% if email_ready %}configured{% else %}not configured yet{% endif %}.</h2>
+        <p>
+            {% if email_ready %}
+            Website forms can send admin notifications using the configured SMTP settings.
+            {% else %}
+            Forms still save to the database, but ADMIN_EMAIL/SMTP settings must be configured before launch.
+            {% endif %}
+        </p>
+    </div>
+    <a class="btn btn-primary" href="/launch-readiness">Launch Checklist</a>
+</section>
+
+<section class="row g-4 mt-2">
+    <div class="col-lg-7">
+        <div class="content-card h-100">
+            <h2 class="h4">Recent inquiries</h2>
+            {% if recent_inquiries %}
+                <div class="clean-list">
+                    {% for item in recent_inquiries %}
+                    <div>
+                        <strong>{{ item.name }}</strong>
+                        <span>{{ item.reason }} | {{ item.phone or item.email }} | {{ item.status }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">No inquiries yet. New consultation, contact, referral, and application messages will appear here.</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="content-card h-100">
+            <h2 class="h4">Quick actions</h2>
+            <div class="dashboard-actions">
+                <a href="/admin/appointments" class="btn btn-primary">Manage Appointments</a>
+                <a href="/admin/schedule" class="btn btn-outline-primary">Schedule Board</a>
+                <a href="/admin/work-queue" class="btn btn-outline-primary">Work Queue</a>
+                <a href="/admin/search" class="btn btn-outline-primary">Global Search</a>
+                <a href="/admin/reports" class="btn btn-outline-primary">Reports & Exports</a>
+                <a href="/admin/system-status" class="btn btn-outline-primary">System Status</a>
+                <a href="/admin/caregiver-conflicts" class="btn btn-outline-primary">Caregiver Conflicts</a>
+                <a href="/admin/audit" class="btn btn-outline-primary">Audit Search</a>
+                <a href="/admin/users" class="btn btn-outline-primary">Manage Users</a>
+                <a href="/admin/users/create" class="btn btn-outline-primary">Add User or Caregiver</a>
+                <a href="/admin/inquiries" class="btn btn-outline-primary">View Inquiries</a>
+                <a href="/admin/care-plans" class="btn btn-outline-primary">Care Plans</a>
+                <a href="/admin/applications" class="btn btn-outline-primary">Applications</a>
+                <a href="/admin/messages" class="btn btn-outline-primary">Portal Messages</a>
+                <a href="/admin/security" class="btn btn-outline-primary">Security Monitor</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="row g-4 mt-2">
+    <div class="col-lg-7">
+        <div class="content-card h-100">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Recent caregiver applications</h2>
+                <a class="btn btn-outline-primary btn-sm" href="/admin/applications">View All</a>
+            </div>
+            {% if recent_applications %}
+                <div class="clean-list">
+                    {% for item in recent_applications %}
+                    <div>
+                        <strong>{{ item.name }}</strong>
+                        <span>{{ item.phone }} | {{ item.email }} | {{ item.status }}</span>
+                        <span>{{ item.availability or "Availability not provided" }}{% if item.certifications %} | {{ item.certifications }}{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">No caregiver applications yet. Public applications submitted at /employment-application will appear here.</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="content-card h-100">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Recent account registrations</h2>
+                <a class="btn btn-outline-primary btn-sm" href="/admin/users">View Users</a>
+            </div>
+            {% if recent_users %}
+                <div class="clean-list">
+                    {% for account in recent_users %}
+                    <div>
+                        <strong>{{ account.name }}</strong>
+                        <span>{{ account.email }} | {{ account.role }}</span>
+                        <span>{{ account.created_at.strftime("%Y-%m-%d") if account.created_at else "Date unavailable" }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">No registered users yet.</div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+<section class="row g-4 mt-2">
+    {% for item in readiness_items[:3] %}
+    <div class="col-md-4">
+        <div class="readiness-card h-100">
+            <span>{{ item.status }}</span>
+            <h2>{{ item.title }}</h2>
+            <p>{{ item.body }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+{% endblock %}
+

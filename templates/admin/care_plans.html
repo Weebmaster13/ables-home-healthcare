@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin</span>
+    <h1>Care plans</h1>
+    <p>Create and track non-medical care plans from consultations, referrals, and family calls.</p>
+</div>
+
+<section class="content-card mb-4">
+    <div class="form-heading">
+        <span class="eyebrow">Create plan</span>
+        <h2>Build a care plan draft</h2>
+        <p>Use this to organize services, schedule, tasks, risks, emergency contacts, and caregiver preferences.</p>
+    </div>
+    <form method="POST" action="/admin/care-plans/create">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Related Inquiry</label>
+                <select name="inquiry_id" class="form-select">
+                    <option value="">No inquiry</option>
+                    {% for item in inquiries %}
+                    <option value="{{ item.id }}">{{ item.name }} | {{ item.reason }} | {{ item.created_at.strftime("%Y-%m-%d") if item.created_at else "" }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Related Referral</label>
+                <select name="referral_id" class="form-select">
+                    <option value="">No referral</option>
+                    {% for item in referrals %}
+                    <option value="{{ item.id }}">{{ item.client_name }} | {{ item.care_needed }} | {{ item.created_at.strftime("%Y-%m-%d") if item.created_at else "" }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Client Name</label>
+                <input name="client_name" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Client Phone</label>
+                <input name="client_phone" class="form-control">
+            </div>
+            <div class="col-12">
+                <label class="form-label">Service Address</label>
+                <input name="service_address" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Service Type</label>
+                <input name="service_type" class="form-control" placeholder="Personal care, respite, companion care">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Schedule</label>
+                <input name="schedule" class="form-control" placeholder="Mon/Wed/Fri mornings, weekends, flexible">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Tasks</label>
+                <textarea name="tasks" rows="4" class="form-control"></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Risks / Safety Notes</label>
+                <textarea name="risks" rows="4" class="form-control"></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Emergency Contacts</label>
+                <textarea name="emergency_contacts" rows="3" class="form-control"></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Caregiver Preferences</label>
+                <textarea name="caregiver_preferences" rows="3" class="form-control"></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    {% for status in care_plan_statuses %}
+                    <option value="{{ status }}">{{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <textarea name="notes" rows="3" class="form-control"></textarea>
+            </div>
+            <div class="col-12">
+                <button class="btn btn-primary">Create Care Plan</button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<section class="content-card">
+    <div class="table-toolbar">
+        <div>
+            <h2 class="h4 mb-1">Care plan list</h2>
+            <p class="mb-0">Track care plan status from draft to active service.</p>
+        </div>
+        <input class="form-control table-search" type="search" placeholder="Search care plans" data-table-search="carePlansTable">
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle admin-table" id="carePlansTable">
+            <thead>
+                <tr>
+                    <th>Updated</th>
+                    <th>Client</th>
+                    <th>Phone</th>
+                    <th>Service</th>
+                    <th>Schedule</th>
+                    <th>Tasks</th>
+                    <th>Risks</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in care_plans %}
+                <tr>
+                    <td>{{ item.updated_at.strftime("%Y-%m-%d") if item.updated_at else "" }}</td>
+                    <td>{{ item.client_name }}</td>
+                    <td>{{ item.client_phone }}</td>
+                    <td>{{ item.service_type }}</td>
+                    <td>{{ item.schedule }}</td>
+                    <td>{{ item.tasks }}</td>
+                    <td>{{ item.risks }}</td>
+                    <td>
+                        <form method="POST" action="/admin/care-plans/{{ item.id }}/status" class="d-flex gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <select name="status" class="form-select form-select-sm">
+                                {% for status in care_plan_statuses %}
+                                <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary">Save</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8"><div class="empty-state">No care plans yet.</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% endblock %}
+

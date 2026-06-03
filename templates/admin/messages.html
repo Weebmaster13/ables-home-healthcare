@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero contact-hero">
+    <span class="eyebrow">Admin inbox</span>
+    <h1>Portal messages</h1>
+    <p>Review client and caregiver questions, reply from one place, and close resolved conversations.</p>
+</div>
+
+<section class="content-card mb-4">
+    <form method="GET" class="admin-search-form">
+        <input name="q" class="form-control" value="{{ query }}" placeholder="Search sender, topic, subject, status">
+        <select name="status" class="form-select">
+            <option value="open" {% if current_status == "open" %}selected{% endif %}>Open messages</option>
+            <option value="all" {% if current_status == "all" %}selected{% endif %}>All messages</option>
+            {% for status in message_statuses %}
+            <option value="{{ status }}" {% if current_status == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary">Filter</button>
+    </form>
+</section>
+
+<section class="visit-card-list">
+    {% for item in messages %}
+    <article class="visit-card polished-visit-card portal-task-card">
+        <div class="visit-card-header">
+            <strong>{{ item.subject }}</strong>
+            <span class="status-pill status-{{ item.status|replace(' ', '-') }}">{{ item.status }}</span>
+        </div>
+        <div class="task-meta">
+            <span><strong>From:</strong> {{ item.sender.name if item.sender else "Unknown" }}</span>
+            <span><strong>Email:</strong> {{ item.sender.email if item.sender else "Unavailable" }}</span>
+            <span><strong>Role:</strong> {{ item.sender.role if item.sender else item.audience }}</span>
+            <span><strong>Topic:</strong> {{ item.topic }}</span>
+            <span><strong>Priority:</strong> {{ item.priority }}</span>
+            <span><strong>Updated:</strong> {{ item.updated_at.strftime("%Y-%m-%d") if item.updated_at else "" }}</span>
+        </div>
+        <p><strong>Message:</strong> {{ item.body }}</p>
+        {% if item.admin_reply %}
+        <p><strong>Latest reply:</strong> {{ item.admin_reply }}</p>
+        {% endif %}
+        <form method="POST" action="/admin/messages/{{ item.id }}/reply" class="message-reply-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="form-label">Office reply</label>
+            <textarea name="admin_reply" class="form-control" rows="3">{{ item.admin_reply or "" }}</textarea>
+            <div class="portal-actions mt-2">
+                <select name="status" class="form-select form-select-sm status-select">
+                    {% for status in message_statuses %}
+                    <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-outline-primary btn-sm">Save Reply / Status</button>
+            </div>
+        </form>
+    </article>
+    {% else %}
+    <div class="empty-state">No portal messages match this filter.</div>
+    {% endfor %}
+</section>
+
+{% endblock %}
+

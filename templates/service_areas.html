@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Service Areas | Ables Home Healthcare in Maryland{% endblock %}
+{% block meta_description %}Ables Home Healthcare serves Maryland counties and Baltimore City with personal care, companion care, respite care, skilled nursing, and daily living support.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Service areas</span>
+    <h1>Home Care Across Maryland Service Areas</h1>
+    <p>Local support for families looking for dependable personal care, companionship, respite, and daily living assistance.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="/free-consultation">Check Availability</a>
+        <a class="btn btn-light btn-lg" href="tel:3013262225">Call Now</a>
+    </div>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-5">
+        <div class="content-card h-100">
+            <span class="eyebrow">Service Areas</span>
+            <h2>Counties We Serve</h2>
+            <p>
+                Ables Home Healthcare serves the Maryland counties listed below and Baltimore City.
+                Contact the office to confirm availability for your exact address.
+            </p>
+
+            <div class="area-list mt-4">
+                {% for area in service_areas %}
+                    <span>{{ area }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="content-card h-100 service-area-map">
+            <span class="eyebrow">Availability First</span>
+            <h2>Call Today To Confirm Care Availability.</h2>
+            <p>Care placement depends on service type, schedule, caregiver availability, location, and client needs.</p>
+            <ul class="check-list">
+                <li>Anne Arundel, Baltimore, Calvert, Caroline, Carroll, Charles, and Frederick</li>
+                <li>Harford, Howard, Kent, Montgomery, Prince Georges, Queen Anne's, St. Mary's, and Talbot</li>
+                <li>Baltimore City</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="mission-card mt-4">
+    <div class="row align-items-center g-3">
+        <div class="col-lg-8">
+            <h2>Need Care In One Of These Areas?</h2>
+            <p class="mb-0">Send your location and care needs. We will let you know what options are available.</p>
+        </div>
+        <div class="col-lg-4 text-lg-end">
+            <a class="btn btn-light" href="/contact">Contact Us</a>
+        </div>
+    </div>
+</section>
+
+<section class="content-band mt-4">
+    <div class="section-heading">
+        <span class="eyebrow">Call Today</span>
+        <h2>Tell Us The Client's County, Schedule, And Care Needs.</h2>
+        <p>Our office can help review whether the requested care can be staffed in the service area.</p>
+    </div>
+</section>
+
+{% endblock %}
+
+

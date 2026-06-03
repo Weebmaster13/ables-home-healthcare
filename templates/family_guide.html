@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Family Home Care Guide | Ables Home Healthcare{% endblock %}
+{% block meta_description %}A practical family guide for preparing for non-medical home care, consultation, care planning, and caregiver follow-up with Ables Home Healthcare.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero about-hero">
+    <span class="eyebrow">Family guide</span>
+    <h1>Know what to ask before home care begins.</h1>
+    <p>Families often reach out during stressful moments. This guide helps you prepare for a calm, practical care conversation.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="/free-consultation">Request Consultation</a>
+        <a class="btn btn-light btn-lg" href="tel:3013262225">Call (301) 326-2225</a>
+    </div>
+</div>
+
+<section class="company-page-grid">
+    {% for item in family_guide_items %}
+    <article class="company-page-card">
+        <span>{{ loop.index }}</span>
+        <h2>{{ item.title }}</h2>
+        <p>{{ item.body }}</p>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="content-band mt-4">
+    <div class="row g-4 align-items-start">
+        <div class="col-lg-6">
+            <span class="eyebrow">Care questions</span>
+            <h2>Questions families can ask during consultation.</h2>
+            <ul class="check-list">
+                <li>Which daily routines are hardest to manage right now?</li>
+                <li>Does the client need hands-on help, reminders, supervision, or companionship?</li>
+                <li>What days and times would reduce the most family stress?</li>
+                <li>Are there fall risks, memory concerns, or transportation needs?</li>
+                <li>How should the office communicate visit updates or schedule changes?</li>
+            </ul>
+        </div>
+        <div class="col-lg-6">
+            <span class="eyebrow">Care plan preview</span>
+            <h2>What gets organized before service.</h2>
+            <div class="care-plan-list compact-care-plan">
+                {% for item in care_plan_preview %}
+                <div>{{ item }}</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="services-preview mt-4">
+    <div class="section-heading">
+        <span class="eyebrow">Common starting services</span>
+        <h2>Families can begin with one service and adjust as needs change.</h2>
+    </div>
+    <div class="row g-3">
+        {% for service in services[:6] %}
+        <div class="col-md-6 col-lg-4">
+            <a class="service-pill d-block" href="/services/{{ service.slug }}">{{ service.name }}</a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="mission-card mt-4">
+    <div class="row g-4 align-items-center">
+        <div class="col-lg-8">
+            <h2>Ready to talk through your situation?</h2>
+            <p class="mb-0">Start with a free consultation so the team can understand needs, scheduling, and the best non-medical care path.</p>
+        </div>
+        <div class="col-lg-4 text-lg-end">
+            <a class="btn btn-light" href="/free-consultation">Start Consultation</a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

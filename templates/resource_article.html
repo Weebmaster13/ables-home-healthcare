@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}{{ article.title }} | Ables Home Healthcare Resources{% endblock %}
+{% block meta_description %}{{ article.summary }}{% endblock %}
+
+{% block content %}
+
+<div class="page-hero faq-hero">
+    <span class="eyebrow">Family resource</span>
+    <h1>{{ article.title }}</h1>
+    <p>{{ article.summary }}</p>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-8">
+        <div class="content-card article-body">
+            {% for section in article.sections %}
+            <p>{{ section }}</p>
+            {% endfor %}
+            <div class="compliance-note">
+                This article is educational, not medical advice. For urgent medical needs, call emergency services or a qualified healthcare provider.
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="info-box">
+            <h2 class="h4">More resources</h2>
+            {% for item in articles %}
+            <a class="side-link" href="/resources/{{ item.slug }}">{{ item.title }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

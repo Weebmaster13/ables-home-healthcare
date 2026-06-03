@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero contact-hero">
+    <span class="eyebrow">Client request</span>
+    <h1>Request care service</h1>
+    <p>Share schedule, service address, safety notes, and preferred support details.</p>
+</div>
+
+<form method="POST" class="contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Requested Date</label>
+            <input name="date" type="date" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Requested Time</label>
+            <input name="time" type="time" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Service Type</label>
+            <select name="service_type" class="form-select">
+                <option>Personal Care</option>
+                <option>Companion Care</option>
+                <option>Respite Care</option>
+                <option>Dementia and Alzheimer's Support</option>
+                <option>Post-Hospital Support</option>
+                <option>Live-In and 24-Hour Care</option>
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Preferred Language</label>
+            <input name="preferred_language" class="form-control" placeholder="English, Spanish, Amharic, etc.">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Service Address</label>
+            <input name="service_address" class="form-control" placeholder="Where care is needed">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Schedule Preference</label>
+            <input name="schedule_preference" class="form-control" placeholder="One-time, recurring, mornings, weekends, flexible">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Mobility / Safety Notes</label>
+            <textarea name="mobility_needs" class="form-control" rows="3" placeholder="Transfers, walker, supervision, fall risk, memory concerns"></textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Emergency Contact</label>
+            <input name="emergency_contact" class="form-control" placeholder="Name and phone">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="4" placeholder="Tasks, routines, preferences, parking/access notes"></textarea>
+        </div>
+        <div class="col-12">
+            <div class="form-check consent-check">
+                <input class="form-check-input" type="checkbox" name="consent_confirmed" value="yes" id="careRequestConsent" required>
+                <label class="form-check-label" for="careRequestConsent">
+                    I confirm this is a non-emergency request and agree to be contacted about care coordination.
+                </label>
+            </div>
+        </div>
+        <div class="col-12">
+            <button class="btn btn-primary">Submit Request</button>
+        </div>
+    </div>
+
+</form>
+
+{% endblock %}
+
+

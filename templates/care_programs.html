@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero about-hero">
+    <span class="eyebrow">Care programs</span>
+    <h1>Care organized around real-life needs</h1>
+    <p>Families often know something has changed, but not what service to ask for. These programs help make the next step clearer.</p>
+</div>
+
+<section class="row g-4">
+    {% for program in care_programs %}
+    <div class="col-lg-4">
+        <div class="program-card h-100">
+            <h2>{{ program.name }}</h2>
+            <p>{{ program.summary }}</p>
+            <ul class="check-list">
+                <li>Flexible scheduling discussion</li>
+                <li>Family and client preference review</li>
+                <li>Caregiver assignment through the admin process</li>
+            </ul>
+            <a class="text-link" href="/contact">Ask about this program</a>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="home-story mt-5">
+    <div class="story-copy">
+        <span class="eyebrow">A smoother decision</span>
+        <h2>From first concern to care plan.</h2>
+        <p>
+            The website now supports the same journey strong medical and home-care sites use:
+            identify the need, explain the service, build trust, and provide a clear contact path.
+        </p>
+        <a class="btn btn-primary" href="/care-process">View the Care Process</a>
+    </div>
+    <div class="story-photo-grid">
+        <div class="story-photo story-photo-main"></div>
+        <div class="story-photo story-photo-small"></div>
+        <div class="story-note">
+            <strong>Better support starts with clarity.</strong>
+            <span>Call (301) 326-2225</span>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+

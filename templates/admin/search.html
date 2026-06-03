@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin search</span>
+    <h1>Global admin search</h1>
+    <p>Find people, requests, referrals, applications, care plans, and appointments without jumping through every page.</p>
+</div>
+
+<section class="admin-search-panel" aria-labelledby="globalSearchHeading">
+    <div>
+        <h2 id="globalSearchHeading">Search records</h2>
+        <p id="searchResultStatus" aria-live="polite">{{ total_results }} result{{ "" if total_results == 1 else "s" }} found{% if query %} for "{{ query }}"{% endif %}.</p>
+    </div>
+    <form method="GET" action="/admin/search" class="admin-search-form" role="search">
+        <label class="visually-hidden" for="adminGlobalSearch">Search admin records</label>
+        <input id="adminGlobalSearch" name="q" class="form-control" value="{{ query }}" placeholder="Name, email, phone, service, status, city">
+        <button class="btn btn-primary">Search</button>
+    </form>
+</section>
+
+{% if not query %}
+<div class="empty-state mt-4">Type a search term to find records across the admin portal.</div>
+{% else %}
+<section class="search-result-grid mt-4">
+    {% for label, items in results.items() %}
+    <article class="content-card">
+        <h2 class="h4">{{ label.replace("_", " ").title() }} <span class="result-count">{{ items|length }}</span></h2>
+        {% if items %}
+        <div class="clean-list">
+            {% for item in items %}
+            <div>
+                {% if label == "users" %}
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.email }} | {{ item.phone or "No phone" }} | {{ item.role }}</span>
+                    <a href="/admin/users">Open users</a>
+                {% elif label == "inquiries" %}
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.reason }} | {{ item.phone or item.email }} | {{ item.status }}</span>
+                    <a href="/admin/inquiries">Open inquiries</a>
+                {% elif label == "referrals" %}
+                    <strong>{{ item.client_name }}</strong>
+                    <span>{{ item.care_needed }} | {{ item.client_phone or "No phone" }} | {{ item.status }}</span>
+                    <a href="/admin/inquiries">Open referrals</a>
+                {% elif label == "applications" %}
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.email }} | {{ item.phone }} | {{ item.status }}</span>
+                    <a href="/admin/applications">Open applications</a>
+                {% elif label == "care_plans" %}
+                    <strong>{{ item.client_name }}</strong>
+                    <span>{{ item.service_type }} | {{ item.schedule }} | {{ item.status }}</span>
+                    <a href="/admin/care-plans">Open care plans</a>
+                {% elif label == "appointments" %}
+                    <strong>{{ item.client.name if item.client else "Unknown client" }}</strong>
+                    <span>{{ item.service_type }} | {{ item.date }} {{ item.time }} | {{ item.status }}</span>
+                    <a href="/admin/appointments">Open appointments</a>
+                {% elif label == "messages" %}
+                    <strong>{{ item.subject }}</strong>
+                    <span>{{ item.sender.name if item.sender else "Unknown" }} | {{ item.topic }} | {{ item.status }}</span>
+                    <a href="/admin/messages">Open messages</a>
+                {% elif label == "documents" %}
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.owner.name if item.owner else "Unknown" }} | {{ item.category }} | {{ item.original_filename }}</span>
+                    <a href="/admin/users/{{ item.owner_id }}/edit">Open user file</a>
+                {% elif label == "admin_notes" %}
+                    <strong>{{ item.subject_user.name if item.subject_user else "Unknown user" }}</strong>
+                    <span>{{ item.note }}</span>
+                    <a href="/admin/users/{{ item.subject_user_id }}/edit">Open admin notes</a>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">No matching {{ label.replace("_", " ") }}.</div>
+        {% endif %}
+    </article>
+    {% endfor %}
+</section>
+{% endif %}
+
+{% endblock %}
+

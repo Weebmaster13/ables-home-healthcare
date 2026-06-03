@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Why Ables Home Healthcare | Silver Spring Home Care{% endblock %}
+{% block meta_description %}Why families choose Ables Home Healthcare for non-medical home care, flexible scheduling, caregiver follow-up, and local Silver Spring support.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Why Ables</span>
+    <h1>Local care coordination with a family-first feel.</h1>
+    <p>Ables Home Healthcare is built around calm communication, respectful support, and practical help inside the home.</p>
+</div>
+
+<section class="home-story">
+    <div class="story-copy">
+        <span class="eyebrow">A more personal agency story</span>
+        <h2>Support families can understand and trust.</h2>
+        <p>
+            Families often begin home care during a stressful transition: after a hospital stay,
+            while caring for an elder, or when daily routines suddenly become harder. Ables should
+            feel like a clear next step, not another confusing healthcare system.
+        </p>
+        <p>
+            The office team is presented as the local point of contact for follow-up,
+            care coordination, and family communication.
+        </p>
+    </div>
+    <div class="story-photo-grid">
+        <div class="story-photo story-photo-main"></div>
+        <div class="story-photo story-photo-small"></div>
+        <div class="story-note">
+            <strong>Rooted in Silver Spring.</strong>
+            <span>Serving nearby Maryland families with non-medical home care support.</span>
+        </div>
+    </div>
+</section>
+
+<section class="trust-badge-row">
+    {% for badge in trust_badges %}
+    <div>{{ badge }}</div>
+    {% endfor %}
+</section>
+
+<section class="content-band">
+    <div class="row g-4 align-items-start">
+        <div class="col-lg-5">
+            <span class="eyebrow">Trust and boundaries</span>
+            <h2>Clear care expectations protect families and caregivers.</h2>
+            <p>Families deserve transparent non-medical service language, careful caregiver screening, and a clear path for feedback when needs change.</p>
+        </div>
+        <div class="col-lg-7">
+            <div class="trust-mini-grid">
+                <div><strong>Service clarity</strong><span>Daily living support is explained separately from physician-ordered clinical care.</span></div>
+                <div><strong>Screening path</strong><span>Caregiver applicants provide experience, references, certifications, and background-check consent.</span></div>
+                <div><strong>Follow-up workflow</strong><span>Admin users can track status from first inquiry through care plan draft and caregiver assignment.</span></div>
+                <div><strong>Family feedback</strong><span>Schedule, caregiver fit, and care plan details can be reviewed when family needs shift.</span></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="row g-4 mt-4">
+    {% for item in family_experience %}
+    <div class="col-md-6">
+        <div class="content-card h-100">
+            <h2>{{ item.title }}</h2>
+            <p>{{ item.body }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+{% endblock %}
+
+

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" role="img" aria-labelledby="title desc">
+  <title id="title">Ables Home Healthcare Logo</title>
+  <desc id="desc">Circular logo mark for Ables Home Healthcare.</desc>
+  <circle cx="54" cy="54" r="50" fill="none" stroke="#0f5dab" stroke-width="8"/>
+  <path d="M30 78 L44 28 L58 78" fill="none" stroke="#0f5dab" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 58 L56 58" fill="none" stroke="#0f5dab" stroke-width="10" stroke-linecap="round"/>
+  <path d="M66 34 L66 78" fill="none" stroke="#0f5dab" stroke-width="10" stroke-linecap="round"/>
+  <path d="M86 34 L86 78" fill="none" stroke="#0f5dab" stroke-width="10" stroke-linecap="round"/>
+  <path d="M66 54 L86 54" fill="none" stroke="#0f5dab" stroke-width="10" stroke-linecap="round"/>
+</svg>
