@@ -1470,7 +1470,18 @@ def healthz():
         checks["uploads"] = f"error: {exc}"
 
     checks["site_base_url"] = "ok" if current_app.config["SITE_BASE_URL"].startswith("https://") or current_app.config["SITE_BASE_URL"].startswith("http://127.0.0.1") else "warning"
-    checks["smtp"] = "ok" if current_app.config.get("MAIL_SERVER") else "not_configured"
+    mail_keys = {
+        "MAIL_SERVER": current_app.config.get("MAIL_SERVER"),
+        "MAIL_USERNAME": current_app.config.get("MAIL_USERNAME"),
+        "MAIL_PASSWORD": current_app.config.get("MAIL_PASSWORD"),
+        "MAIL_DEFAULT_SENDER": current_app.config.get("MAIL_DEFAULT_SENDER"),
+        "ADMIN_EMAIL": current_app.config.get("ADMIN_EMAIL"),
+    }
+    checks["smtp"] = "ok" if all(mail_keys.values()) else "not_configured"
+    checks["smtp_keys"] = {
+        key: "present" if value else "missing"
+        for key, value in mail_keys.items()
+    }
     checks["production_mode"] = "ok" if current_app.config.get("SESSION_COOKIE_SECURE") else "development"
 
     ok = checks["database"] == "ok" and checks["uploads"] == "ok"
