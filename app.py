@@ -4,6 +4,7 @@ import logging
 
 from flask import Flask, redirect, request, url_for
 from flask_login import current_user
+from flask_migrate import upgrade
 from config import Config
 from extensions import csrf, db, login_manager, migrate
 
@@ -32,8 +33,22 @@ def create_app():
     register_security_headers(app)
     register_error_handlers(app)
     register_template_helpers(app)
+    run_startup_migrations(app)
 
     return app
+
+
+def run_startup_migrations(app):
+    if not app.config.get("AUTO_MIGRATE_ON_STARTUP"):
+        return
+
+    with app.app_context():
+        try:
+            upgrade()
+            app.logger.info("Database migrations applied on startup.")
+        except Exception:
+            app.logger.exception("Database migration failed on startup.")
+            raise
 
 
 def configure_logging(app):
