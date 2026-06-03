@@ -1451,6 +1451,8 @@ def terms():
 @main_bp.route("/healthz")
 def healthz():
     checks = {}
+    database_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    checks["database_backend"] = "postgresql" if database_uri.startswith("postgresql") else "sqlite" if database_uri.startswith("sqlite") else "other"
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"] = "ok"
