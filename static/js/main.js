@@ -115,6 +115,7 @@
                 nav_careers: "Careers",
                 nav_contact: "Contact",
                 dashboard: "Dashboard",
+                account: "Account",
                 logout: "Logout",
                 login: "Login",
                 clients_label: "CLIENTS",
@@ -163,6 +164,7 @@
                 nav_careers: "Empleos",
                 nav_contact: "Contacto",
                 dashboard: "Panel",
+                account: "Cuenta",
                 logout: "Cerrar Sesion",
                 login: "Iniciar Sesion",
                 clients_label: "CLIENTES",
@@ -211,6 +213,7 @@
                 nav_careers: "Carrieres",
                 nav_contact: "Contact",
                 dashboard: "Tableau de Bord",
+                account: "Compte",
                 logout: "Deconnexion",
                 login: "Connexion",
                 clients_label: "CLIENTS",
@@ -259,6 +262,7 @@
                 nav_careers: "Kazi",
                 nav_contact: "Mawasiliano",
                 dashboard: "Dashibodi",
+                account: "Akaunti",
                 logout: "Toka",
                 login: "Ingia",
                 clients_label: "WATEJA",
@@ -307,6 +311,7 @@
                 nav_careers: "Careers",
                 nav_contact: "Contact",
                 dashboard: "Dashboard",
+                account: "Account",
                 logout: "Logout",
                 login: "Login",
                 clients_label: "CLIENTS",
@@ -344,6 +349,7 @@
                 nav_work: "Looking for Work?",
                 nav_contact: "Contact",
                 login: "Login",
+                account: "Account",
                 logout: "Logout",
                 language_help: "Select language and the page translates automatically."
             },
@@ -362,6 +368,7 @@
                 nav_work: "Looking for Work?",
                 nav_contact: "Contact",
                 login: "Login",
+                account: "Account",
                 logout: "Logout",
                 language_help: "Select language and the page translates automatically."
             },
@@ -380,6 +387,7 @@
                 nav_work: "Shaqo Raadis?",
                 nav_contact: "Xiriir",
                 login: "Gal",
+                account: "Akoon",
                 logout: "Ka Bax",
                 language_help: "Dooro luqad, kadib bogga si toos ah ayuu isu turjumayaa."
             },
@@ -398,6 +406,7 @@
                 nav_work: "Procurando Trabalho?",
                 nav_contact: "Contato",
                 login: "Entrar",
+                account: "Conta",
                 logout: "Sair",
                 language_help: "Escolha um idioma e a pagina sera traduzida automaticamente."
             }

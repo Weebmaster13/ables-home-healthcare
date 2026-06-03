@@ -786,3 +786,20 @@ def test_admin_user_directory_shows_clickable_user_details():
         assert b"1 Files" in page.data
         assert b"1 Messages" in page.data
 
+
+def test_sidebar_shows_auth_and_admin_user_links():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+
+    with app.test_client() as client:
+        public_page = client.get("/")
+        assert public_page.status_code == 200
+        assert b'href="/auth/login"' in public_page.data
+
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        admin_page = client.get("/dashboard")
+        assert admin_page.status_code == 200
+        assert b'href="/admin/users"' in admin_page.data
+        assert b'href="/auth/logout"' in admin_page.data
+

@@ -93,12 +93,38 @@
       <a href="/careers" data-i18n="nav_careers">Careers</a>
       <a href="/contact" data-i18n="nav_contact">Contact</a>
     </details>
+
+    <details class="nav-group" open>
+      <summary data-i18n="account">Account</summary>
+      {% if current_user.is_authenticated %}
+      <a href="/dashboard" data-i18n="dashboard">Dashboard</a>
+      <a href="/profile">Profile</a>
+      <a href="/auth/change-password">Password</a>
+      <a href="/auth/logout" data-i18n="logout">Logout</a>
+      {% else %}
+      <a href="/auth/login" data-i18n="login">Login</a>
+      {% endif %}
+    </details>
+
+    {% if current_user.is_authenticated and current_user.role == "admin" %}
+    <details class="nav-group" open>
+      <summary>Admin</summary>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/work-queue">Work Queue</a>
+      <a href="/admin/applications">Applications</a>
+      <a href="/admin/inquiries">Inquiries</a>
+      <a href="/admin/messages">Messages</a>
+      <a href="/admin/search">Search</a>
+      <a href="/admin/security">Security</a>
+    </details>
+    {% endif %}
   </nav>
 
   <div class="side-actions">
     {% if current_user.is_authenticated %}
       <a class="btn btn-primary btn-sm w-100" href="/dashboard" data-i18n="dashboard">Dashboard</a>
       {% if current_user.role == "admin" %}
+      <a class="btn btn-outline-primary btn-sm w-100" href="/admin/users">Users</a>
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/work-queue">Work Queue</a>
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/search">Search</a>
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/schedule">Schedule</a>
