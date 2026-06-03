@@ -515,7 +515,7 @@ TRUST_BADGES = [
     "Background Checked Caregivers",
     "Flexible Scheduling",
     "Family Feedback Follow-Up",
-    "Local Silver Spring Office",
+    "Maryland Service Areas",
     "Skilled and Non-Skilled Care",
     "Simple Client Intake",
 ]
