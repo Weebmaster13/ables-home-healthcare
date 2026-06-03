@@ -1458,6 +1458,16 @@ def healthz():
         current_app.logger.exception("Health check database failure")
         checks["database"] = f"error: {exc}"
 
+    try:
+        db.session.execute(text("SELECT COUNT(*) FROM \"user\""))
+        db.session.execute(text("SELECT COUNT(*) FROM inquiry"))
+        db.session.execute(text("SELECT COUNT(*) FROM caregiver_application"))
+        db.session.execute(text("SELECT COUNT(*) FROM notification_log"))
+        checks["database_schema"] = "ok"
+    except Exception as exc:
+        current_app.logger.exception("Health check database schema failure")
+        checks["database_schema"] = f"error: {exc}"
+
     upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
     try:
         upload_folder.mkdir(parents=True, exist_ok=True)
@@ -1484,7 +1494,7 @@ def healthz():
     }
     checks["production_mode"] = "ok" if current_app.config.get("SESSION_COOKIE_SECURE") else "development"
 
-    ok = checks["database"] == "ok" and checks["uploads"] == "ok"
+    ok = checks["database"] == "ok" and checks["database_schema"] == "ok" and checks["uploads"] == "ok"
     return jsonify({"status": "ok" if ok else "error", "checks": checks}), 200 if ok else 503
 
 
