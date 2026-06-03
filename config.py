@@ -32,6 +32,15 @@ def env_bool(name, default=False):
     return value.lower() == "true"
 
 
+def is_production_environment(database_uri):
+    flask_env = os.environ.get("FLASK_ENV", "").lower()
+    if flask_env == "production":
+        return True
+    if env_bool("RENDER"):
+        return True
+    return bool(os.environ.get("DATABASE_URL")) and not database_uri.startswith("sqlite:///")
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-later")
     SITE_BASE_URL = os.environ.get(
@@ -42,14 +51,15 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(BASE_DIR, "instance", "uploads"))
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(5 * 1024 * 1024)))
-    REMEMBER_COOKIE_SECURE = os.environ.get("FLASK_ENV") == "production"
-    SESSION_COOKIE_SECURE = os.environ.get("FLASK_ENV") == "production"
+    PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)
+    REMEMBER_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
+    SESSION_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_REFRESH_EACH_REQUEST = True
     PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.environ.get("SESSION_HOURS", "8")))
     WTF_CSRF_TIME_LIMIT = int(os.environ.get("WTF_CSRF_TIME_LIMIT", "3600"))
-    FORCE_HTTPS = env_bool("FORCE_HTTPS", os.environ.get("FLASK_ENV") == "production")
+    FORCE_HTTPS = env_bool("FORCE_HTTPS", PRODUCTION_ENVIRONMENT)
     ACCOUNT_LOCKOUT_ATTEMPTS = int(os.environ.get("ACCOUNT_LOCKOUT_ATTEMPTS", "5"))
     ACCOUNT_LOCKOUT_MINUTES = int(os.environ.get("ACCOUNT_LOCKOUT_MINUTES", "15"))
     ADMIN_RECOVERY_CODES_REQUIRED = env_bool("ADMIN_RECOVERY_CODES_REQUIRED", False)

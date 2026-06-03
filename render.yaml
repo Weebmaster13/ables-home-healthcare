@@ -20,7 +20,7 @@ services:
       - key: FORCE_HTTPS
         value: "true"
       - key: SITE_BASE_URL
-        value: https://REPLACE_WITH_FINAL_DOMAIN
+        value: https://ables-home-healthcare-6.onrender.com
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
