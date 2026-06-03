@@ -703,3 +703,59 @@ def test_report_export_date_filters():
         assert b"New Export" in export.data
         assert b"Old Export" not in export.data
 
+
+def test_admin_archive_test_inquiries_keeps_real_inquiries():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        test_inquiry = Inquiry(name="ADMIN CHECK Contact Record", email="test@example.com", reason="Ask", message="TEST cleanup", status="new")
+        real_inquiry = Inquiry(name="Real Family", email="family@example.com", reason="Care", message="Needs care", status="new")
+        db.session.add_all([test_inquiry, real_inquiry])
+        db.session.commit()
+        test_id = test_inquiry.id
+        real_id = real_inquiry.id
+
+    with app.test_client() as client:
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        response = client.post("/admin/inquiries/archive-test-records", follow_redirects=False)
+        assert response.status_code == 302
+
+    with app.app_context():
+        assert db.session.get(Inquiry, test_id).status == "closed"
+        assert db.session.get(Inquiry, real_id).status == "new"
+
+
+def test_admin_archive_test_applications_keeps_real_applications():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        test_application = CaregiverApplication(
+            name="ADMIN CHECK Caregiver Record",
+            email="test-caregiver@example.com",
+            phone="301-326-2225",
+            certifications="CNA",
+            experience="TEST cleanup",
+            status="new",
+        )
+        real_application = CaregiverApplication(
+            name="Real Applicant",
+            email="real-caregiver@example.com",
+            phone="301-326-2225",
+            certifications="CNA",
+            experience="Real experience",
+            status="new",
+        )
+        db.session.add_all([test_application, real_application])
+        db.session.commit()
+        test_id = test_application.id
+        real_id = real_application.id
+
+    with app.test_client() as client:
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        response = client.post("/admin/applications/archive-test-records", follow_redirects=False)
+        assert response.status_code == 302
+
+    with app.app_context():
+        assert db.session.get(CaregiverApplication, test_id).status == "not a fit"
+        assert db.session.get(CaregiverApplication, real_id).status == "new"
+

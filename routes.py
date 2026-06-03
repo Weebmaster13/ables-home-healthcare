@@ -121,6 +121,11 @@ def short_status_error(error):
     return " ".join(str(error).split())[:180]
 
 
+def looks_like_test_record(*values):
+    text = " ".join(str(value or "") for value in values).upper()
+    return "TEST" in text or "ADMIN CHECK" in text
+
+
 def safe_original_filename(filename, fallback="upload"):
     cleaned = secure_filename(filename or "")
     return cleaned or fallback
@@ -2676,6 +2681,24 @@ def admin_update_application_status(application_id):
     return redirect(url_for("main.admin_applications"))
 
 
+@main_bp.route("/admin/applications/archive-test-records", methods=["POST"])
+@login_required
+def admin_archive_test_applications():
+    require_role("admin")
+
+    applications = CaregiverApplication.query.all()
+    archived_count = 0
+    for application in applications:
+        if looks_like_test_record(application.name, application.email, application.experience, application.applicant_references):
+            application.status = "not a fit"
+            archived_count += 1
+
+    audit("archive_test_applications", "CaregiverApplication", None, f"Archived {archived_count} test applications")
+    db.session.commit()
+    flash(f"Archived {archived_count} test caregiver application record(s).", "success")
+    return redirect(url_for("main.admin_applications"))
+
+
 @main_bp.route("/admin/users/<int:user_id>/onboarding", methods=["POST"])
 @login_required
 def admin_update_onboarding(user_id):
@@ -2806,6 +2829,24 @@ def admin_update_inquiry_status(inquiry_id):
     db.session.commit()
 
     flash("Inquiry status updated.", "success")
+    return redirect(url_for("main.admin_inquiries"))
+
+
+@main_bp.route("/admin/inquiries/archive-test-records", methods=["POST"])
+@login_required
+def admin_archive_test_inquiries():
+    require_role("admin")
+
+    inquiries = Inquiry.query.all()
+    archived_count = 0
+    for inquiry in inquiries:
+        if looks_like_test_record(inquiry.name, inquiry.email, inquiry.reason, inquiry.message):
+            inquiry.status = "closed"
+            archived_count += 1
+
+    audit("archive_test_inquiries", "Inquiry", None, f"Archived {archived_count} test inquiries")
+    db.session.commit()
+    flash(f"Archived {archived_count} test inquiry record(s).", "success")
     return redirect(url_for("main.admin_inquiries"))
 
 

@@ -14,6 +14,10 @@
             <h2 class="h4 mb-1">Contact Inquiries</h2>
             <p class="mb-0">Track free consultations, service questions, and public messages.</p>
         </div>
+        <form method="POST" action="/admin/inquiries/archive-test-records">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-primary btn-sm">Archive Test Records</button>
+        </form>
         <input class="form-control table-search" type="search" placeholder="Search inquiries" data-table-search="inquiriesTable">
     </div>
     <div class="table-responsive">

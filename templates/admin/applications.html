@@ -14,6 +14,10 @@
             <h2 class="h4 mb-1">Applications</h2>
             <p class="mb-0">Track candidates from new application through screening and approval.</p>
         </div>
+        <form method="POST" action="/admin/applications/archive-test-records">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-primary btn-sm">Archive Test Records</button>
+        </form>
         <input class="form-control table-search" type="search" placeholder="Search applications" data-table-search="applicationsTable">
     </div>
     <div class="table-responsive">
