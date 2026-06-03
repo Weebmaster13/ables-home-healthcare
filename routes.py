@@ -2516,7 +2516,28 @@ def admin_users():
     require_role("admin")
 
     users = User.query.order_by(User.role, User.name).all()
-    return render_template("admin/users.html", users=users, user=current_user)
+    user_summaries = {}
+    for account in users:
+        user_summaries[account.id] = {
+            "appointments": Appointment.query.filter(
+                (Appointment.client_id == account.id) | (Appointment.caregiver_id == account.id)
+            ).count(),
+            "documents": ClientDocument.query.filter_by(owner_id=account.id, archived_at=None).count(),
+            "messages": PortalMessage.query.filter_by(sender_id=account.id).count(),
+            "notes": AdminNote.query.filter_by(subject_user_id=account.id).count(),
+        }
+    role_counts = {
+        "admin": sum(1 for account in users if account.role == "admin"),
+        "client": sum(1 for account in users if account.role == "client"),
+        "caregiver": sum(1 for account in users if account.role == "caregiver"),
+    }
+    return render_template(
+        "admin/users.html",
+        users=users,
+        user_summaries=user_summaries,
+        role_counts=role_counts,
+        user=current_user,
+    )
 
 
 @main_bp.route("/admin/users/create", methods=["GET", "POST"])

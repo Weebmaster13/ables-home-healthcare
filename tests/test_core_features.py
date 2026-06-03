@@ -759,3 +759,30 @@ def test_admin_archive_test_applications_keeps_real_applications():
         assert db.session.get(CaregiverApplication, test_id).status == "not a fit"
         assert db.session.get(CaregiverApplication, real_id).status == "new"
 
+
+def test_admin_user_directory_shows_clickable_user_details():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        client_user, _ = create_user("client")
+        account = db.session.get(User, client_user.id)
+        account.name = "Directory Detail Client"
+        account.phone = "301-326-2225"
+        account.address = "11510 Georgia Avenue"
+        account.care_needs = "Needs help with meals and medication reminders."
+        db.session.add(ClientDocument(owner_id=account.id, uploaded_by_id=admin.id, title="Intake File", category="Intake", filename="x.pdf", original_filename="x.pdf"))
+        db.session.add(PortalMessage(sender_id=account.id, topic="Care", subject="Schedule", body="Need schedule help."))
+        db.session.add(Appointment(client_id=account.id, date="2030-01-01", time="09:00", service_type="Personal Care", status="pending"))
+        db.session.commit()
+
+    with app.test_client() as client:
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        page = client.get("/admin/users")
+        assert page.status_code == 200
+        assert b"adminUserDirectory" in page.data
+        assert b"Directory Detail Client" in page.data
+        assert f"/admin/users/{client_user.id}/edit".encode() in page.data
+        assert b"1 Visits" in page.data
+        assert b"1 Files" in page.data
+        assert b"1 Messages" in page.data
+
