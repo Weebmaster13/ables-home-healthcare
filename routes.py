@@ -104,6 +104,23 @@ def apply_created_at_filters(query, model):
     return query
 
 
+def mask_email_address(email):
+    if not email or "@" not in email:
+        return ""
+    name, domain = email.split("@", 1)
+    if len(name) <= 2:
+        masked_name = name[:1] + "*"
+    else:
+        masked_name = name[:2] + "***" + name[-1:]
+    return f"{masked_name}@{domain}"
+
+
+def short_status_error(error):
+    if not error:
+        return ""
+    return " ".join(str(error).split())[:180]
+
+
 def safe_original_filename(filename, fallback="upload"):
     cleaned = secure_filename(filename or "")
     return cleaned or fallback
@@ -1494,6 +1511,19 @@ def healthz():
         key: "present" if value else "missing"
         for key, value in mail_keys.items()
     }
+    try:
+        latest_email = NotificationLog.query.filter_by(channel="email").order_by(NotificationLog.created_at.desc()).first()
+        checks["email_delivery"] = {
+            "sent": NotificationLog.query.filter_by(channel="email", status="sent").count(),
+            "failed": NotificationLog.query.filter_by(channel="email", status="failed").count(),
+            "skipped": NotificationLog.query.filter_by(channel="email", status="skipped").count(),
+            "latest_status": latest_email.status if latest_email else "none",
+            "latest_recipient": mask_email_address(latest_email.recipient) if latest_email else "",
+            "latest_error": short_status_error(latest_email.error) if latest_email else "",
+        }
+    except Exception as exc:
+        current_app.logger.exception("Health check email delivery summary failure")
+        checks["email_delivery"] = {"error": short_status_error(exc)}
     checks["production_mode"] = "ok" if current_app.config.get("SESSION_COOKIE_SECURE") else "development"
 
     ok = checks["database"] == "ok" and checks["database_schema"] == "ok" and checks["uploads"] == "ok"
