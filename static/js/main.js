@@ -70,7 +70,7 @@
             am: "am",
             sw: "sw",
             ar: "ar",
-            so: "so",
+            zh: "zh-CN",
             pt: "pt"
         };
         const languageNames = {
@@ -79,9 +79,9 @@
             fr: "French",
             am: "Amharic",
             sw: "Kiswahili",
-            kam: "KiKamba",
+            kam: "Kamba",
             ar: "Arabic",
-            so: "Somali",
+            zh: "Chinese",
             pt: "Portuguese"
         };
         const originalTextNodes = new WeakMap();
@@ -286,7 +286,7 @@
                 language_help: "Chagua lugha na ukurasa utatafsiriwa moja kwa moja."
             },
             kam: {
-                message: "KiKamba selected. Key controls updated while full-page KiKamba translation support is added.",
+                message: "Kamba selected. Common labels are updated where translation support is available.",
                 nav_get_care: "Kwithiwa na Utethyo",
                 nav_home: "Mwaitu",
                 nav_family_guide: "Mwongozo wa Musyi",
@@ -372,24 +372,24 @@
                 logout: "Logout",
                 language_help: "Select language and the page translates automatically."
             },
-            so: {
-                message: "Somali selected. Translating the full page.",
-                nav_get_care: "Hel Daryeel",
-                nav_home: "Bogga Hore",
-                nav_become_client: "Noqo Macmiil",
-                looking_for_label: "MAXAAD RAADINEYSAA?",
-                client_benefits: "Adeeg Xirfad Leh | Daryeel Naxariis Leh | Adeeg Waqti Leh oo Lagu Kalsoon Yahay",
-                benefit_professional: "Adeeg Xirfad Leh",
-                benefit_compassionate: "Daryeel Naxariis Leh",
-                benefit_reliable: "Adeeg Waqti Leh oo Lagu Kalsoon Yahay",
-                click_here: "HALKAN GUJI",
-                nav_services: "Adeegyo",
-                nav_work: "Shaqo Raadis?",
-                nav_contact: "Xiriir",
-                login: "Gal",
-                account: "Akoon",
-                logout: "Ka Bax",
-                language_help: "Dooro luqad, kadib bogga si toos ah ayuu isu turjumayaa."
+            zh: {
+                message: "Chinese selected. Translating the full page.",
+                nav_get_care: "获取护理",
+                nav_home: "首页",
+                nav_become_client: "成为客户",
+                looking_for_label: "需要什么？",
+                client_benefits: "专业服务 | 贴心护理 | 准时可靠服务",
+                benefit_professional: "专业服务",
+                benefit_compassionate: "贴心护理",
+                benefit_reliable: "准时可靠服务",
+                click_here: "点击这里",
+                nav_services: "服务",
+                nav_work: "正在找工作？",
+                nav_contact: "联系",
+                login: "登录",
+                account: "账户",
+                logout: "退出",
+                language_help: "选择语言后，页面会自动翻译。"
             },
             pt: {
                 message: "Portugues selecionado. Traduzindo a pagina inteira.",
