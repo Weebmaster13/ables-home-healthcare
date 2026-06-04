@@ -5,13 +5,13 @@
 <div class="page-hero simple-hero">
     <span class="eyebrow">Admin backups</span>
     <h1>Production backups</h1>
-    <p>Create and download full backups that include the local database and uploaded documents.</p>
+    <p>Create local app backups and verify the live PostgreSQL host backup plan before launch.</p>
 </div>
 
 <section class="portal-help-strip compact mb-4">
     <div>
         <strong>Backup now</strong>
-        <span>Use this before major changes and on a regular schedule. For deployed PostgreSQL, also configure host-level automated backups.</span>
+        <span>This page backs up the app files/uploads that exist on this server. For Render PostgreSQL, also enable and verify Render-managed database backups from the Render database page.</span>
     </div>
     <form method="POST" action="/admin/backups/create">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -22,6 +22,18 @@
         <input type="hidden" name="keep" value="10">
         <button class="btn btn-light btn-sm">Keep Latest 10</button>
     </form>
+</section>
+
+<section class="content-card mb-4">
+    <span class="eyebrow">Launch checklist</span>
+    <h2 class="h4">Backup policy before real client use</h2>
+    <ul class="check-list">
+        <li>Confirm Render PostgreSQL automated backups or scheduled snapshots are enabled.</li>
+        <li>Create a test backup and confirm an admin can download it.</li>
+        <li>Decide where uploaded documents will be stored long term, such as Render disk, S3, Backblaze B2, or another approved storage service.</li>
+        <li>Write down who checks backups weekly and how long old backups are kept.</li>
+        <li>Do not store backup files on a public computer or share them through personal email.</li>
+    </ul>
 </section>
 
 <section class="content-card">
