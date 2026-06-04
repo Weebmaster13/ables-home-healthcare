@@ -445,23 +445,23 @@ body.dark-mode .side-actions a.is-active {
 }
 
 .brand-print-preview {
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: var(--shadow);
-    padding: 1.25rem;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
 }
 
 .brand-print-grid {
     display: grid;
-    gap: 1rem;
+    gap: 1.5rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .brand-print-grid figure {
-    background: var(--soft-blue);
-    border: 1px solid var(--line);
+    background: #f7fbff;
+    border: 1px solid #cfe0ee;
     border-radius: 8px;
+    box-shadow: none;
     margin: 0;
     overflow: hidden;
 }
@@ -469,6 +469,7 @@ body.dark-mode .side-actions a.is-active {
 .brand-print-grid img {
     display: block;
     height: auto;
+    object-fit: cover;
     width: 100%;
 }
 
