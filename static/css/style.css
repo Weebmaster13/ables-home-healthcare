@@ -2558,7 +2558,8 @@ body.dark-mode .side-actions a.is-active {
 .readiness-strip,
 .portal-workflow,
 .readiness-grid,
-.launch-status-grid {
+.launch-status-grid,
+.package-completion-grid {
     display: grid;
     gap: 1rem;
 }
@@ -2587,6 +2588,84 @@ body.dark-mode .side-actions a.is-active {
 .launch-status-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     margin-bottom: 2rem;
+}
+
+.package-completion-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 1rem 0 2rem;
+}
+
+.package-completion-card {
+    background: var(--card-bg);
+    border: 1px solid rgba(29, 78, 118, 0.16);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 1.3rem;
+}
+
+.package-completion-head {
+    align-items: start;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.9rem;
+}
+
+.package-completion-head h2 {
+    font-size: 1.35rem;
+    margin-bottom: 0;
+}
+
+.package-completion-head strong {
+    background: rgba(35, 160, 143, 0.12);
+    border: 1px solid rgba(35, 160, 143, 0.24);
+    border-radius: 999px;
+    color: var(--green);
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.65rem;
+}
+
+.checked-feature-list {
+    display: grid;
+    gap: 0.55rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.checked-feature-list li {
+    align-items: center;
+    color: var(--ink);
+    display: grid;
+    font-weight: 700;
+    gap: 0.55rem;
+    grid-template-columns: auto 1fr;
+}
+
+.checked-feature-list li::before {
+    align-items: center;
+    background: var(--green);
+    border-radius: 50%;
+    color: #ffffff;
+    content: "✓";
+    display: inline-flex;
+    font-size: 0.78rem;
+    font-weight: 900;
+    height: 1.2rem;
+    justify-content: center;
+    width: 1.2rem;
+}
+
+.package-status {
+    background: rgba(238, 248, 255, 0.84);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--muted);
+    margin: 1rem 0 0;
+    padding: 0.85rem;
 }
 
 .readiness-card,
@@ -3334,6 +3413,7 @@ table {
     .home-image-grid,
     .readiness-grid,
     .launch-status-grid,
+    .package-completion-grid,
     .portal-workflow,
     .portal-command-grid,
     .portal-quick-actions,

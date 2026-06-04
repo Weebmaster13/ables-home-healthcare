@@ -687,6 +687,46 @@ READINESS_ITEMS = [
     },
 ]
 
+PACKAGE_COMPLETION_SECTIONS = [
+    {
+        "title": "Premium Website Package",
+        "price": "$1,250+",
+        "status": "Completed with expansion capability",
+        "items": [
+            "Advanced Custom Design",
+            "Multi-Page Website Structure",
+            "Responsive Device Compatibility",
+            "Enhanced User Experience",
+            "Scalable Website Architecture",
+            "Modern Visual Design",
+            "Professional Presentation",
+            "Appointment Scheduling Integration",
+            "Live Chat Integration",
+            "Promotional Video Integration",
+            "Advanced Client Portal Features",
+        ],
+    },
+    {
+        "title": "SEO Services",
+        "price": "$850-$1,500+",
+        "status": "SEO foundation established with advanced SEO support included",
+        "items": [
+            "SEO-Friendly Website Structure",
+            "Fast Loading Pages",
+            "Mobile Optimization",
+            "Search Engine Accessible Content",
+            "Modern Website Standards",
+            "Advanced Keyword Research",
+            "Google Business Profile Optimization",
+            "Google Search Console Setup",
+            "Analytics Integration",
+            "Local SEO Campaign",
+            "Directory Listings",
+            "Ongoing SEO Monitoring",
+        ],
+    },
+]
+
 CAREGIVER_PROMISES = [
     {
         "title": "Screening and background checks",
@@ -1128,6 +1168,7 @@ def launch_readiness():
         "launch_readiness.html",
         readiness_items=READINESS_ITEMS,
         launch_status=launch_status_items(),
+        package_sections=PACKAGE_COMPLETION_SECTIONS,
     )
 
 
