@@ -259,19 +259,23 @@ body.dark-mode .side-nav {
     background: rgba(16, 36, 55, 0.96);
 }
 
+.side-links::-webkit-scrollbar,
 .side-actions::-webkit-scrollbar {
     width: 8px;
 }
 
+.side-links::-webkit-scrollbar-track,
 .side-actions::-webkit-scrollbar-track {
     background: transparent;
 }
 
+.side-links::-webkit-scrollbar-thumb,
 .side-actions::-webkit-scrollbar-thumb {
     background: rgba(0, 97, 195, 0.22);
     border-radius: 999px;
 }
 
+.side-links::-webkit-scrollbar-thumb:hover,
 .side-actions::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 97, 195, 0.38);
 }
@@ -567,8 +571,12 @@ body.dark-mode .side-actions a.is-active {
 .side-links {
     display: grid;
     gap: 0.18rem;
-    flex: 0 0 auto;
-    overflow: visible;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 0.15rem;
+    scrollbar-gutter: stable;
 }
 
 .nav-group-label,
@@ -631,9 +639,10 @@ body.dark-mode .side-actions a.is-active {
 
 .side-actions {
     display: grid;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     gap: 0.55rem;
     margin-top: 0.4rem;
+    max-height: 42vh;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
