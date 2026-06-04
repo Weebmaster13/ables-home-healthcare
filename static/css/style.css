@@ -473,6 +473,12 @@ body.dark-mode .side-actions a.is-active {
     width: 100%;
 }
 
+.postcard-display-reference {
+    display: block;
+    height: auto;
+    width: 100%;
+}
+
 .brand-print-grid figcaption {
     background: rgba(23, 59, 99, 0.05);
     color: var(--navy);
