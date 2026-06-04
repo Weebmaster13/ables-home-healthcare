@@ -1,4 +1,5 @@
 from email.message import EmailMessage
+from html import escape
 import smtplib
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -28,7 +29,7 @@ def log_notification(channel, recipient, subject, status, provider="", related_t
         current_app.logger.warning("Could not queue notification log: %s", exc)
 
 
-def send_email_notification(to_email, subject, body, reply_to=None, related_type=None, related_id=None):
+def send_email_notification(to_email, subject, body, reply_to=None, related_type=None, related_id=None, html_body=None):
     """Send email when SMTP is configured; otherwise log it."""
     app = current_app
     mail_server = app.config.get("MAIL_SERVER")
@@ -47,6 +48,8 @@ def send_email_notification(to_email, subject, body, reply_to=None, related_type
         message["Reply-To"] = reply_to
 
     message.set_content(body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
 
     try:
         mail_port = int(app.config.get("MAIL_PORT", 587))
@@ -70,9 +73,54 @@ def send_email_notification(to_email, subject, body, reply_to=None, related_type
     return True
 
 
+def admin_email_html(subject, body):
+    safe_subject = escape(subject)
+    rows = []
+    for line in body.splitlines():
+        if not line.strip():
+            continue
+        if ":" in line:
+            label, value = line.split(":", 1)
+            rows.append(
+                f"<tr><th style=\"padding:9px 10px;text-align:left;border-bottom:1px solid #e6eef5;color:#2b5d80;width:36%;\">{escape(label.strip())}</th><td style=\"padding:9px 10px;border-bottom:1px solid #e6eef5;color:#1f2f3f;\">{escape(value.strip())}</td></tr>"
+            )
+        else:
+            rows.append(f"<tr><td colspan=\"2\" style=\"padding:9px 10px;border-bottom:1px solid #e6eef5;color:#1f2f3f;\">{escape(line.strip())}</td></tr>")
+    table = "\n".join(rows)
+    return f"""<!doctype html>
+<html>
+<body style="margin:0;background:#f3f7fb;font-family:Arial,sans-serif;color:#173b63;">
+  <div style="max-width:680px;margin:0 auto;padding:24px;">
+    <div style="background:#ffffff;border:1px solid #d8e4ef;border-radius:8px;overflow:hidden;">
+      <div style="background:#2b5d80;color:#ffffff;padding:18px 22px;">
+        <h1 style="font-size:22px;margin:0;">{safe_subject}</h1>
+        <p style="margin:6px 0 0;">Ables Home Healthcare website notification</p>
+      </div>
+      <div style="padding:22px;">
+        <table style="border-collapse:collapse;width:100%;font-size:15px;">
+          {table}
+        </table>
+        <p style="border-top:1px solid #d8e4ef;margin-top:22px;padding-top:14px;color:#5f7185;">
+          For emergencies, call 911. This email was generated from the website.
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
 def send_admin_notification(subject, body, reply_to=None, related_type=None, related_id=None):
     admin_email = current_app.config.get("ADMIN_EMAIL")
-    return send_email_notification(admin_email, subject, body, reply_to=reply_to, related_type=related_type, related_id=related_id)
+    return send_email_notification(
+        admin_email,
+        subject,
+        body,
+        reply_to=reply_to,
+        related_type=related_type,
+        related_id=related_id,
+        html_body=admin_email_html(subject, body),
+    )
 
 
 def send_sms_notification(to_number, body, related_type=None, related_id=None):

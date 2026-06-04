@@ -110,6 +110,7 @@
     <details class="nav-group" open>
       <summary>Admin</summary>
       <a href="/admin/users">Users</a>
+      <a href="/admin/launch-checklist">Launch Checklist</a>
       <a href="/admin/work-queue">Work Queue</a>
       <a href="/admin/applications">Applications</a>
       <a href="/admin/inquiries">Inquiries</a>
@@ -125,6 +126,7 @@
       <a class="btn btn-primary btn-sm w-100" href="/dashboard" data-i18n="dashboard">Dashboard</a>
       {% if current_user.role == "admin" %}
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/users">Users</a>
+      <a class="btn btn-outline-primary btn-sm w-100" href="/admin/launch-checklist">Launch Checklist</a>
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/work-queue">Work Queue</a>
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/search">Search</a>
       <a class="btn btn-outline-primary btn-sm w-100" href="/admin/schedule">Schedule</a>
@@ -288,8 +290,16 @@
   </footer>
 </div>
 
+<div class="cookie-banner" id="cookieBanner" hidden>
+  <div>
+    <strong>Privacy Notice</strong>
+    <p>This website uses essential cookies for login, security, forms, and accessibility preferences. Review our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a>.</p>
+  </div>
+  <button class="btn btn-primary btn-sm" type="button" id="cookieAccept">Accept</button>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='js/main.js') }}?v=20260603-symmetrical-tab"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}?v=20260604-launch-tools"></script>
 <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 </body>
 </html>

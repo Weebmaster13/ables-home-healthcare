@@ -756,7 +756,7 @@ def test_admin_archive_test_applications_keeps_real_applications():
         assert response.status_code == 302
 
     with app.app_context():
-        assert db.session.get(CaregiverApplication, test_id).status == "not a fit"
+        assert db.session.get(CaregiverApplication, test_id).status == "not selected"
         assert db.session.get(CaregiverApplication, real_id).status == "new"
 
 

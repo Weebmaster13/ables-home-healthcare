@@ -21,6 +21,8 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-outline-primary btn-sm">Archive Test Records</button>
         </form>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/inquiries/export">Export Inquiries</a>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/referrals/export">Export Referrals</a>
         <input class="form-control table-search" type="search" placeholder="Search inquiries" data-table-search="inquiriesTable">
     </div>
     <div class="table-responsive">

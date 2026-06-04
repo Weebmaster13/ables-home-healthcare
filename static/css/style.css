@@ -433,6 +433,12 @@ body.dark-mode .side-actions a.is-active {
 }
 
 @media (max-width: 991px) {
+    .cookie-banner {
+        align-items: stretch;
+        flex-direction: column;
+        left: 1rem;
+    }
+
     .care-values-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -485,6 +491,32 @@ body.dark-mode .side-actions a.is-active {
     font-weight: 700;
     padding: 0.9rem 1rem;
     text-align: center;
+}
+
+.cookie-banner {
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    bottom: 1rem;
+    box-shadow: var(--shadow);
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    left: calc(var(--sidebar-width) + 1rem);
+    max-width: 760px;
+    padding: 1rem;
+    position: fixed;
+    right: 1rem;
+    z-index: 1100;
+}
+
+.cookie-banner[hidden] {
+    display: none;
+}
+
+.cookie-banner p {
+    margin: 0.25rem 0 0;
 }
 
 .strip-heading {
@@ -2172,6 +2204,20 @@ body.dark-mode .side-actions a.is-active {
     margin: 0;
     max-width: 260px;
     white-space: pre-wrap;
+}
+
+.status-pill.success {
+    background: #e4f7ed;
+    color: #146c43;
+}
+
+.status-pill.warning {
+    background: #fff3cd;
+    color: #8a5a00;
+}
+
+.launch-checklist p {
+    margin: 0.35rem 0 0.75rem;
 }
 
 .recovery-code-grid {

@@ -9,7 +9,7 @@ from flask import Blueprint, abort, current_app, jsonify, make_response, render_
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
@@ -343,7 +343,9 @@ def send_visit_reminder(appointment, label):
 
 FOLLOW_UP_STATUSES = [
     "new",
+    "reviewed",
     "contacted",
+    "follow-up needed",
     "assessment scheduled",
     "care plan drafted",
     "caregiver assigned",
@@ -352,7 +354,9 @@ FOLLOW_UP_STATUSES = [
 
 APPLICATION_STATUSES = [
     "new",
+    "reviewed",
     "screening",
+    "follow-up needed",
     "interview scheduled",
     "references pending",
     "approved",
@@ -2078,6 +2082,73 @@ def admin_system_status():
     )
 
 
+@main_bp.route("/admin/launch-checklist")
+@login_required
+def admin_launch_checklist():
+    require_permission("admin:reports")
+    health = health_status_data()
+    BACKUP_DIR.mkdir(exist_ok=True)
+    backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
+    test_inquiries = Inquiry.query.filter(
+        or_(
+            Inquiry.email.ilike("%test%"),
+            Inquiry.name.ilike("%test%"),
+            Inquiry.message.ilike("%test%"),
+        )
+    ).count()
+    test_applications = CaregiverApplication.query.filter(
+        or_(
+            CaregiverApplication.email.ilike("%test%"),
+            CaregiverApplication.name.ilike("%test%"),
+            CaregiverApplication.experience.ilike("%test%"),
+        )
+    ).count()
+    checklist = [
+        {
+            "label": "Test records cleaned",
+            "ready": test_inquiries == 0 and test_applications == 0,
+            "detail": f"{test_inquiries} possible test inquiry record(s), {test_applications} possible test caregiver application record(s).",
+            "href": url_for("main.admin_inquiries"),
+        },
+        {
+            "label": "SMTP tested",
+            "ready": health["checks"].get("smtp") == "ok",
+            "detail": "Email settings are configured." if health["checks"].get("smtp") == "ok" else "Configure and test SMTP before launch.",
+            "href": url_for("main.admin_system_status"),
+        },
+        {
+            "label": "PostgreSQL active",
+            "ready": health["checks"].get("database_backend") == "postgresql",
+            "detail": f"Database backend: {health['checks'].get('database_backend', 'unknown')}.",
+            "href": url_for("main.admin_system_status"),
+        },
+        {
+            "label": "Backups confirmed",
+            "ready": len(backups) > 0,
+            "detail": f"{len(backups)} local backup file(s). Also verify Render PostgreSQL backups in Render.",
+            "href": url_for("main.admin_backups"),
+        },
+        {
+            "label": "Privacy reviewed",
+            "ready": current_app.config.get("PRIVACY_REVIEW_CONFIRMED") is True,
+            "detail": "Set PRIVACY_REVIEW_CONFIRMED=true after owner/legal review.",
+            "href": url_for("main.privacy"),
+        },
+        {
+            "label": "Domain connected",
+            "ready": current_app.config.get("SITE_BASE_URL", "").startswith("https://") and "onrender.com" not in current_app.config.get("SITE_BASE_URL", ""),
+            "detail": current_app.config.get("SITE_BASE_URL", "SITE_BASE_URL not set."),
+            "href": url_for("main.admin_system_status"),
+        },
+    ]
+    return render_template(
+        "admin/launch_checklist.html",
+        checklist=checklist,
+        ready_count=sum(1 for item in checklist if item["ready"]),
+        user=current_user,
+    )
+
+
 @main_bp.route("/admin/maintenance")
 @login_required
 def admin_maintenance():
@@ -2213,6 +2284,18 @@ def admin_reports():
     notification_logs = NotificationLog.query.order_by(NotificationLog.created_at.desc()).limit(20).all()
     audit_events = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(10).all()
     report_cards = [
+        {
+            "title": "Client inquiries",
+            "count": Inquiry.query.count(),
+            "description": "Public contact, consultation, and care-request submissions.",
+            "url": "/admin/inquiries/export",
+        },
+        {
+            "title": "Caregiver applications",
+            "count": CaregiverApplication.query.count(),
+            "description": "Applicant contact details, availability, requirements, references, and status.",
+            "url": "/admin/applications/export",
+        },
         {
             "title": "Appointments",
             "count": len(appointments),
@@ -2612,6 +2695,91 @@ def admin_inquiries():
     )
 
 
+@main_bp.route("/admin/inquiries/export")
+@login_required
+def admin_inquiries_export():
+    require_role("admin")
+    rows = [
+        [
+            item.id,
+            item.name,
+            item.email,
+            item.phone,
+            item.reason,
+            item.care_recipient,
+            item.service_address,
+            item.city,
+            item.start_date,
+            item.start_timeline,
+            item.services_needed,
+            item.schedule_preference,
+            item.mobility_needs,
+            item.diagnosis_notes,
+            item.emergency_contact,
+            item.preferred_language,
+            "yes" if item.consent_confirmed else "no",
+            item.status,
+            item.message,
+            short_date(item.created_at),
+        ]
+        for item in Inquiry.query.order_by(Inquiry.created_at.desc()).all()
+    ]
+    audit("export_inquiries", "Inquiry", None, f"{len(rows)} row(s)")
+    return csv_response(
+        "ables-client-inquiries.csv",
+        [
+            "id",
+            "name",
+            "email",
+            "phone",
+            "reason",
+            "care_recipient",
+            "service_address",
+            "city",
+            "start_date",
+            "start_timeline",
+            "services_needed",
+            "schedule_preference",
+            "mobility_needs",
+            "diagnosis_notes",
+            "emergency_contact",
+            "preferred_language",
+            "consent_confirmed",
+            "status",
+            "message",
+            "created_at",
+        ],
+        rows,
+    )
+
+
+@main_bp.route("/admin/referrals/export")
+@login_required
+def admin_referrals_export():
+    require_role("admin")
+    rows = [
+        [
+            item.id,
+            item.referral_source,
+            item.source_phone,
+            item.client_name,
+            item.client_phone,
+            item.care_needed,
+            item.follow_up,
+            item.notes,
+            item.status,
+            short_date(item.created_at),
+        ]
+        for item in Referral.query.order_by(Referral.created_at.desc()).all()
+    ]
+    audit("export_referrals", "Referral", None, f"{len(rows)} row(s)")
+    return csv_response(
+        "ables-referrals.csv",
+        ["id", "referral_source", "source_phone", "client_name", "client_phone", "care_needed", "follow_up", "notes", "status", "created_at"],
+        rows,
+    )
+
+
 @main_bp.route("/admin/care-plans")
 @login_required
 def admin_care_plans():
@@ -2688,6 +2856,64 @@ def admin_applications():
     )
 
 
+@main_bp.route("/admin/applications/export")
+@login_required
+def admin_applications_export():
+    require_role("admin")
+    rows = [
+        [
+            item.id,
+            item.name,
+            item.email,
+            item.phone,
+            item.address,
+            item.availability,
+            item.weekday_availability,
+            item.weekend_availability,
+            item.certifications,
+            item.years_experience,
+            item.transportation,
+            item.preferred_service_areas,
+            item.applicant_references,
+            "yes" if item.background_check_consent else "no",
+            item.requirements_checklist,
+            item.resume_filename,
+            item.experience,
+            item.status,
+            short_date(item.created_at),
+            short_date(item.updated_at),
+        ]
+        for item in CaregiverApplication.query.order_by(CaregiverApplication.created_at.desc()).all()
+    ]
+    audit("export_caregiver_applications", "CaregiverApplication", None, f"{len(rows)} row(s)")
+    return csv_response(
+        "ables-caregiver-applications.csv",
+        [
+            "id",
+            "name",
+            "email",
+            "phone",
+            "address",
+            "availability",
+            "weekday_availability",
+            "weekend_availability",
+            "certifications",
+            "years_experience",
+            "transportation",
+            "preferred_service_areas",
+            "references",
+            "background_check_consent",
+            "requirements_checklist",
+            "resume_filename",
+            "experience",
+            "status",
+            "created_at",
+            "updated_at",
+        ],
+        rows,
+    )
+
+
 @main_bp.route("/admin/applications/<int:application_id>/status", methods=["POST"])
 @login_required
 def admin_update_application_status(application_id):
@@ -2711,7 +2937,7 @@ def admin_archive_test_applications():
     archived_count = 0
     for application in applications:
         if looks_like_test_record(application.name, application.email, application.experience, application.applicant_references):
-            application.status = "not a fit"
+            application.status = "not selected"
             archived_count += 1
 
     audit("archive_test_applications", "CaregiverApplication", None, f"Archived {archived_count} test applications")

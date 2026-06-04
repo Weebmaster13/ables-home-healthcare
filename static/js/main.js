@@ -6,6 +6,8 @@
     const modeToggle = document.getElementById("modeToggle");
     const languageSelect = document.getElementById("languageSelect");
     const languageMessage = document.getElementById("languageMessage");
+    const cookieBanner = document.getElementById("cookieBanner");
+    const cookieAccept = document.getElementById("cookieAccept");
     const desktopQuery = window.matchMedia("(min-width: 992px)");
 
     const savedTheme = localStorage.getItem("ables-theme");
@@ -15,6 +17,19 @@
 
     if (localStorage.getItem("ables-nav") === "collapsed") {
         body.classList.add("nav-collapsed");
+    }
+
+    if (cookieBanner && localStorage.getItem("ables-cookie-ok") !== "yes") {
+        cookieBanner.hidden = false;
+    }
+
+    if (cookieAccept) {
+        cookieAccept.addEventListener("click", function () {
+            localStorage.setItem("ables-cookie-ok", "yes");
+            if (cookieBanner) {
+                cookieBanner.hidden = true;
+            }
+        });
     }
 
     function syncModeText() {

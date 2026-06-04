@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin launch</span>
+    <h1>Launch checklist</h1>
+    <p>Confirm the important production items before the website is used by real clients, caregivers, and referral partners.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Ready</span><strong>{{ ready_count }}</strong></div>
+    <div class="stat-card"><span>Total</span><strong>{{ checklist|length }}</strong></div>
+    <a class="stat-card stat-link" href="/healthz"><span>Health Check</span><strong>View</strong></a>
+    <a class="stat-card stat-link" href="/admin/system-status"><span>System Status</span><strong>Go</strong></a>
+</section>
+
+<section class="content-card">
+    <div class="clean-list launch-checklist">
+        {% for item in checklist %}
+        <div>
+            <strong>{{ item.label }}</strong>
+            <span class="status-pill {{ 'success' if item.ready else 'warning' }}">{{ "Ready" if item.ready else "Needs Work" }}</span>
+            <p>{{ item.detail }}</p>
+            <a class="btn btn-outline-primary btn-sm" href="{{ item.href }}">Open</a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}
