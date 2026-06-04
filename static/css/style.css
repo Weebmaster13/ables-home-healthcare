@@ -853,25 +853,28 @@ body.dark-mode .side-actions a.is-active {
 }
 
 .tab-benefit-grid {
-    align-items: stretch;
-    display: grid;
-    gap: 0.35rem;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    max-width: min(36rem, 100%);
+    align-items: center;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0;
+    justify-content: center;
+    max-width: min(46rem, 100%);
     width: 100%;
 }
 
 .tab-benefit-grid b {
     align-items: center;
-    background: rgba(255, 255, 255, 0.52);
-    border: 1px solid rgba(13, 102, 194, 0.12);
-    border-radius: 7px;
     display: flex;
-    font-size: 0.8rem;
+    font-size: clamp(0.72rem, 1.7vw, 0.95rem);
     justify-content: center;
-    line-height: 1.2;
-    min-height: 2.7rem;
-    padding: 0.35rem;
+    line-height: 1.15;
+    min-width: 0;
+    padding: 0 0.55rem;
+    white-space: normal;
+}
+
+.tab-benefit-grid b + b {
+    border-left: 2px solid rgba(13, 102, 194, 0.28);
 }
 
 .public-action-tab em {
@@ -1369,9 +1372,10 @@ body.dark-mode .side-actions a.is-active {
 
 .simple-benefit-list {
     color: var(--muted);
-    display: grid;
-    gap: 0.45rem;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0;
     list-style: none;
     margin: 0 0 1rem;
     padding: 0;
@@ -1379,15 +1383,19 @@ body.dark-mode .side-actions a.is-active {
 
 .simple-benefit-list li {
     align-items: center;
-    background: rgba(255, 255, 255, 0.56);
-    border: 1px solid rgba(13, 102, 194, 0.12);
-    border-radius: 7px;
     display: flex;
+    flex: 1 1 0;
+    font-size: clamp(0.86rem, 1.4vw, 1rem);
     font-weight: 800;
     justify-content: center;
-    min-height: 3rem;
-    padding: 0.4rem;
+    line-height: 1.2;
+    min-width: 0;
+    padding: 0.15rem 0.55rem;
     text-align: center;
+}
+
+.simple-benefit-list li + li {
+    border-left: 2px solid rgba(13, 102, 194, 0.28);
 }
 
 .simple-benefit-list li::before {
@@ -3336,10 +3344,6 @@ table {
         border-right: 0;
         border-bottom: 1px solid var(--line);
         min-height: 62px;
-    }
-
-    .tab-benefit-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .mobile-topbar {
