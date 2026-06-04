@@ -856,7 +856,7 @@ body.dark-mode .side-actions a.is-active {
     box-shadow: 0 10px 24px rgba(23, 59, 99, 0.06);
     display: grid;
     gap: 0;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .public-action-tab {
@@ -2555,11 +2555,144 @@ body.dark-mode .side-actions a.is-active {
     font-weight: 700;
 }
 
+.promo-video-section {
+    align-items: center;
+    background: linear-gradient(135deg, rgba(238, 248, 255, 0.95), rgba(255, 255, 255, 0.96));
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    display: grid;
+    gap: 1.4rem;
+    grid-template-columns: 0.85fr 1.15fr;
+    margin: 1.5rem 0;
+    padding: 1.4rem;
+}
+
+.promo-video-copy p {
+    color: var(--muted);
+}
+
+.video-placeholder {
+    align-items: center;
+    aspect-ratio: 16 / 9;
+    background:
+        linear-gradient(rgba(11, 49, 82, 0.64), rgba(11, 49, 82, 0.64)),
+        url("../img/care/hero-consultation-v2.png") center / cover;
+    border-radius: 8px;
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 230px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.video-placeholder strong {
+    font-size: 1.35rem;
+}
+
+.video-placeholder span {
+    max-width: 34rem;
+}
+
+.play-button {
+    align-items: center;
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 50%;
+    display: inline-flex;
+    height: 4rem;
+    justify-content: center;
+    margin-bottom: 1rem;
+    width: 4rem;
+}
+
+.play-button::before {
+    border-bottom: 0.75rem solid transparent;
+    border-left: 1.15rem solid var(--blue);
+    border-top: 0.75rem solid transparent;
+    content: "";
+    margin-left: 0.25rem;
+}
+
+.portal-role-grid,
+.portal-feature-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.portal-role-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.portal-feature-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.portal-feature-grid div {
+    background: var(--soft-blue);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink);
+    font-weight: 800;
+    padding: 1rem;
+    text-align: center;
+}
+
+.quick-chat-widget {
+    bottom: 1rem;
+    position: fixed;
+    right: 1rem;
+    z-index: 1050;
+}
+
+.quick-chat-toggle {
+    background: var(--blue);
+    border: 0;
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    color: #ffffff;
+    font-weight: 900;
+    padding: 0.75rem 1rem;
+}
+
+.quick-chat-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    bottom: 3.6rem;
+    box-shadow: var(--shadow);
+    display: grid;
+    gap: 0.7rem;
+    padding: 1rem;
+    position: absolute;
+    right: 0;
+    width: min(20rem, calc(100vw - 2rem));
+}
+
+.quick-chat-panel[hidden] {
+    display: none;
+}
+
+.quick-chat-panel p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.quick-chat-panel label span {
+    color: var(--muted);
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+}
+
 .readiness-strip,
 .portal-workflow,
 .readiness-grid,
-.launch-status-grid,
-.package-completion-grid {
+.launch-status-grid {
     display: grid;
     gap: 1rem;
 }
@@ -2588,84 +2721,6 @@ body.dark-mode .side-actions a.is-active {
 .launch-status-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     margin-bottom: 2rem;
-}
-
-.package-completion-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin: 1rem 0 2rem;
-}
-
-.package-completion-card {
-    background: var(--card-bg);
-    border: 1px solid rgba(29, 78, 118, 0.16);
-    border-radius: 8px;
-    box-shadow: var(--shadow);
-    padding: 1.3rem;
-}
-
-.package-completion-head {
-    align-items: start;
-    border-bottom: 1px solid var(--line);
-    display: flex;
-    gap: 1rem;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-    padding-bottom: 0.9rem;
-}
-
-.package-completion-head h2 {
-    font-size: 1.35rem;
-    margin-bottom: 0;
-}
-
-.package-completion-head strong {
-    background: rgba(35, 160, 143, 0.12);
-    border: 1px solid rgba(35, 160, 143, 0.24);
-    border-radius: 999px;
-    color: var(--green);
-    flex: 0 0 auto;
-    font-size: 0.78rem;
-    padding: 0.35rem 0.65rem;
-}
-
-.checked-feature-list {
-    display: grid;
-    gap: 0.55rem;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.checked-feature-list li {
-    align-items: center;
-    color: var(--ink);
-    display: grid;
-    font-weight: 700;
-    gap: 0.55rem;
-    grid-template-columns: auto 1fr;
-}
-
-.checked-feature-list li::before {
-    align-items: center;
-    background: var(--green);
-    border-radius: 50%;
-    color: #ffffff;
-    content: "✓";
-    display: inline-flex;
-    font-size: 0.78rem;
-    font-weight: 900;
-    height: 1.2rem;
-    justify-content: center;
-    width: 1.2rem;
-}
-
-.package-status {
-    background: rgba(238, 248, 255, 0.84);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    color: var(--muted);
-    margin: 1rem 0 0;
-    padding: 0.85rem;
 }
 
 .readiness-card,
@@ -3411,9 +3466,11 @@ table {
     .queue-grid,
     .real-care-grid,
     .home-image-grid,
+    .promo-video-section,
+    .portal-role-grid,
+    .portal-feature-grid,
     .readiness-grid,
     .launch-status-grid,
-    .package-completion-grid,
     .portal-workflow,
     .portal-command-grid,
     .portal-quick-actions,

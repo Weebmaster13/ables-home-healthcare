@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Secure Portal | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Secure portal entry for Ables Home Healthcare clients, family users, caregivers, and administrators to access messages, documents, care requests, and schedules.{% endblock %}
+{% block og_title %}Secure Portal | Ables Home Healthcare{% endblock %}
+{% block og_description %}Login or register for the Ables Home Healthcare portal.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Secure Portal</span>
+    <h1>Portal Access For Clients, Families, Caregivers, And Staff.</h1>
+    <p>Use the secure login system to view dashboards, care requests, messages, documents, caregiver schedules, and office updates.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="/auth/login">Login</a>
+        <a class="btn btn-outline-primary btn-lg" href="/auth/register">Register</a>
+    </div>
+</div>
+
+<section class="portal-role-grid">
+    <article class="content-card">
+        <span class="eyebrow">Client / Family</span>
+        <h2>Care Request Dashboard</h2>
+        <p>Registered clients can request care, review appointments, send portal messages, and upload documents securely.</p>
+        <a class="btn btn-primary btn-sm" href="/auth/register?role=client">Create Client Account</a>
+    </article>
+    <article class="content-card">
+        <span class="eyebrow">Caregiver</span>
+        <h2>Caregiver Dashboard</h2>
+        <p>Caregivers can view assigned visits, update availability, send notes, and complete visit follow-up after login.</p>
+        <a class="btn btn-primary btn-sm" href="/employment-application">Apply To Work</a>
+    </article>
+    <article class="content-card">
+        <span class="eyebrow">Admin</span>
+        <h2>Office Management</h2>
+        <p>Administrators can review submissions, users, schedules, messages, documents, reports, and system status.</p>
+        <a class="btn btn-outline-primary btn-sm" href="/auth/login">Admin Login</a>
+    </article>
+</section>
+
+<section class="portal-feature-grid mt-4">
+    <div>Messages</div>
+    <div>Documents</div>
+    <div>Care Requests</div>
+    <div>Appointments</div>
+    <div>Caregiver Applications</div>
+    <div>Admin Work Queue</div>
+</section>
+
+{% endblock %}

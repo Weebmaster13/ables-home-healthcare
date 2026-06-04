@@ -803,3 +803,86 @@ def test_sidebar_shows_auth_and_admin_user_links():
         assert b'href="/admin/users"' in admin_page.data
         assert b'href="/auth/logout"' in admin_page.data
 
+
+def test_schedule_consultation_saves_inquiry_and_notifies_admin():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("schedule")
+    with app.test_client() as client:
+        page = client.get("/schedule-consultation")
+        assert page.status_code == 200
+        assert b"Schedule Consultation" in page.data
+        response = client.post(
+            "/schedule-consultation",
+            data={
+                "name": "Schedule Family",
+                "email": email,
+                "phone": "301-326-2225",
+                "preferred_date": "2032-02-01",
+                "preferred_time": "10:30",
+                "service_needed": "Companion Care",
+                "message": "Need Maryland home care consultation.",
+                "consent_confirmed": "yes",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+    with app.app_context():
+        inquiry = Inquiry.query.filter_by(email=email, reason="Scheduled consultation").first()
+        assert inquiry is not None
+        assert inquiry.start_date == "2032-02-01"
+        assert "Preferred time: 10:30" in inquiry.schedule_preference
+        assert "Service needed: Companion Care" in inquiry.message
+        assert NotificationLog.query.filter(NotificationLog.subject.ilike("%scheduled consultation%")).count() >= 1
+        Inquiry.query.filter_by(email=email).delete()
+        db.session.commit()
+
+
+def test_quick_message_widget_saves_inquiry():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.test_client() as client:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b"quickChatWidget" in home.data
+        response = client.post(
+            "/quick-message",
+            data={
+                "name": "Quick Visitor",
+                "contact": "quick@example.com",
+                "message": "Can someone call about personal care?",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+    with app.app_context():
+        inquiry = Inquiry.query.filter_by(email="quick@example.com", reason="Quick Message").first()
+        assert inquiry is not None
+        assert "personal care" in inquiry.message
+        Inquiry.query.filter_by(email="quick@example.com").delete()
+        db.session.commit()
+
+
+def test_portal_and_seo_checklist_pages_are_real_routes():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+
+    with app.test_client() as client:
+        portal = client.get("/portal")
+        assert portal.status_code == 200
+        assert b"Client / Family" in portal.data
+        assert b"Caregiver Dashboard" in portal.data
+        assert b"/auth/login" in portal.data
+
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        seo = client.get("/admin/seo-checklist")
+        assert seo.status_code == 200
+        assert b"Sitemap XML" in seo.data
+        assert b"Google Analytics" in seo.data
+        assert b"Ready For Integration" in seo.data
+
+    with app.app_context():
+        User.query.filter_by(id=admin.id).delete()
+        db.session.commit()
+

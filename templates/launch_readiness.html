@@ -30,34 +30,6 @@
     {% endfor %}
 </section>
 
-<section class="readiness-strip mt-4">
-    <div>
-        <span class="eyebrow">Completed package</span>
-        <h2>Website and SEO value checklist</h2>
-        <p>All listed website package and SEO foundation items are included in the current build or supported through the site structure already in place.</p>
-    </div>
-</section>
-
-<section class="package-completion-grid">
-    {% for section in package_sections %}
-    <article class="package-completion-card">
-        <div class="package-completion-head">
-            <div>
-                <span class="eyebrow">{{ section.price }}</span>
-                <h2>{{ section.title }}</h2>
-            </div>
-            <strong>All Checked</strong>
-        </div>
-        <ul class="checked-feature-list">
-            {% for item in section["items"] %}
-            <li>{{ item }}</li>
-            {% endfor %}
-        </ul>
-        <p class="package-status"><strong>Status:</strong> {{ section.status }}</p>
-    </article>
-    {% endfor %}
-</section>
-
 <section class="readiness-grid">
     {% for item in readiness_items %}
     <div class="readiness-card">

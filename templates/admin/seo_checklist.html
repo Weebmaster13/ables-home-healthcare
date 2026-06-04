@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Admin SEO</span>
+    <h1>SEO Implementation Checklist</h1>
+    <p>This page checks real website features and configuration. Third-party setup items stay marked as ready for integration until environment variables are added.</p>
+</div>
+
+<section class="dashboard-stats mb-4">
+    <div class="stat-card"><span>Active</span><strong>{{ ready_count }}</strong></div>
+    <div class="stat-card"><span>Total</span><strong>{{ items|length }}</strong></div>
+    <a class="stat-card stat-link" href="/sitemap.xml"><span>Sitemap</span><strong>View</strong></a>
+    <a class="stat-card stat-link" href="/robots.txt"><span>Robots</span><strong>View</strong></a>
+</section>
+
+<section class="content-card">
+    <div class="clean-list launch-checklist">
+        {% for item in items %}
+        <div>
+            <strong>{{ item.label }}</strong>
+            <span class="status-pill {{ 'success' if item.ready else 'warning' }}">{{ "Active" if item.ready else "Ready For Integration" }}</span>
+            <p>{{ item.detail }}</p>
+            <a class="btn btn-outline-primary btn-sm" href="{{ item.href }}">Open</a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}

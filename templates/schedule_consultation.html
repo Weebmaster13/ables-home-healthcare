@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule Consultation | Ables Home Healthcare{% endblock %}
+{% block meta_description %}Schedule a consultation with Ables Home Healthcare for Maryland home healthcare, personal care, companion care, and caregiver support services.{% endblock %}
+{% block og_title %}Schedule Consultation | Ables Home Healthcare{% endblock %}
+{% block og_description %}Request a preferred consultation date and time for home care services in Maryland.{% endblock %}
+
+{% block content %}
+
+<div class="page-hero contact-hero">
+    <span class="eyebrow">Schedule Consultation</span>
+    <h1>Schedule A Consultation With Ables Home Healthcare.</h1>
+    <p>Send your preferred date and time. Staff will review the request and follow up by phone or email.</p>
+</div>
+
+<section class="row g-4">
+    <div class="col-lg-7">
+        <form method="POST" class="contact-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Name</label>
+                    <input name="name" class="form-control" autocomplete="name" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Phone</label>
+                    <input name="phone" class="form-control" autocomplete="tel" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Email</label>
+                    <input name="email" type="email" class="form-control" autocomplete="email" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Service Needed</label>
+                    <select name="service_needed" class="form-select" required>
+                        <option value="">Choose service</option>
+                        {% for service in services %}
+                        <option>{{ service.name }}</option>
+                        {% endfor %}
+                        <option>Not sure yet</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Preferred Date</label>
+                    <input name="preferred_date" type="date" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Preferred Time</label>
+                    <input name="preferred_time" type="time" class="form-control" required>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Message</label>
+                    <textarea name="message" rows="5" class="form-control" placeholder="Tell us who needs care, the city/county, schedule needs, and any questions." required></textarea>
+                </div>
+                <div class="col-12">
+                    <div class="form-check consent-check">
+                        <input class="form-check-input" type="checkbox" name="consent_confirmed" value="yes" id="scheduleConsent" required>
+                        <label class="form-check-label" for="scheduleConsent">
+                            I confirm this is a non-emergency request and agree to be contacted about consultation scheduling.
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary">Schedule Consultation</button>
+                </div>
+            </div>
+        </form>
+    </div>
+    <div class="col-lg-5">
+        <div class="info-box accent-box">
+            <h2 class="h4">What Happens Next?</h2>
+            <div class="compact-steps">
+                {% for step in consultation_steps %}
+                <div>
+                    <strong>{{ step.number }} {{ step.title }}</strong>
+                    <p>{{ step.body }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="info-box mt-4">
+            <h2 class="h4">Service Areas</h2>
+            <p>Ables Home Healthcare supports home care services and caregiver support across Maryland, including Montgomery County, Prince George's County, Baltimore, and surrounding approved counties.</p>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

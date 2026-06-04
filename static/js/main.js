@@ -8,6 +8,8 @@
     const languageMessage = document.getElementById("languageMessage");
     const cookieBanner = document.getElementById("cookieBanner");
     const cookieAccept = document.getElementById("cookieAccept");
+    const quickChatToggle = document.getElementById("quickChatToggle");
+    const quickChatPanel = document.getElementById("quickChatPanel");
     const desktopQuery = window.matchMedia("(min-width: 992px)");
 
     const savedTheme = localStorage.getItem("ables-theme");
@@ -29,6 +31,14 @@
             if (cookieBanner) {
                 cookieBanner.hidden = true;
             }
+        });
+    }
+
+    if (quickChatToggle && quickChatPanel) {
+        quickChatToggle.addEventListener("click", function () {
+            const shouldOpen = quickChatPanel.hasAttribute("hidden");
+            quickChatPanel.toggleAttribute("hidden", !shouldOpen);
+            quickChatToggle.setAttribute("aria-expanded", String(shouldOpen));
         });
     }
 

@@ -470,6 +470,8 @@ PUBLIC_STATIC_ROUTES = [
     "main.service_areas",
     "main.care_process",
     "main.free_consultation",
+    "main.schedule_consultation",
+    "main.portal",
     "main.referrals",
     "main.care_standards",
     "main.caregivers",
@@ -684,46 +686,6 @@ READINESS_ITEMS = [
         "title": "Confirmed business details",
         "status": "Needs owner confirmation",
         "body": "Confirm licensing language, exact service scope, payment options, service areas, hours, and testimonial permission.",
-    },
-]
-
-PACKAGE_COMPLETION_SECTIONS = [
-    {
-        "title": "Premium Website Package",
-        "price": "$1,250+",
-        "status": "Completed with expansion capability",
-        "items": [
-            "Advanced Custom Design",
-            "Multi-Page Website Structure",
-            "Responsive Device Compatibility",
-            "Enhanced User Experience",
-            "Scalable Website Architecture",
-            "Modern Visual Design",
-            "Professional Presentation",
-            "Appointment Scheduling Integration",
-            "Live Chat Integration",
-            "Promotional Video Integration",
-            "Advanced Client Portal Features",
-        ],
-    },
-    {
-        "title": "SEO Services",
-        "price": "$850-$1,500+",
-        "status": "SEO foundation established with advanced SEO support included",
-        "items": [
-            "SEO-Friendly Website Structure",
-            "Fast Loading Pages",
-            "Mobile Optimization",
-            "Search Engine Accessible Content",
-            "Modern Website Standards",
-            "Advanced Keyword Research",
-            "Google Business Profile Optimization",
-            "Google Search Console Setup",
-            "Analytics Integration",
-            "Local SEO Campaign",
-            "Directory Listings",
-            "Ongoing SEO Monitoring",
-        ],
     },
 ]
 
@@ -1063,55 +1025,68 @@ def care_process():
     return render_template("care_process.html", consultation_steps=CONSULTATION_STEPS)
 
 
+def create_consultation_inquiry(reason="Scheduled consultation"):
+    preferred_date = request.form.get("preferred_date", "").strip() or request.form.get("start_date", "").strip()
+    preferred_time = request.form.get("preferred_time", "").strip()
+    service_needed = request.form.get("service_needed", "").strip() or request.form.get("services_needed", "").strip()
+    schedule_preference = request.form.get("schedule_preference", "").strip()
+    if preferred_time:
+        schedule_preference = f"Preferred time: {preferred_time}. {schedule_preference}".strip()
+
+    inquiry = Inquiry(
+        name=request.form.get("name", "").strip(),
+        email=request.form.get("email", "").strip(),
+        phone=request.form.get("phone", "").strip(),
+        reason=reason,
+        care_recipient=request.form.get("care_recipient", "").strip(),
+        service_address=request.form.get("service_address", "").strip(),
+        city=request.form.get("city", "").strip(),
+        start_date=preferred_date,
+        start_timeline=request.form.get("start_timeline", "").strip(),
+        services_needed=service_needed,
+        schedule_preference=schedule_preference,
+        mobility_needs=request.form.get("mobility_needs", "").strip(),
+        diagnosis_notes=request.form.get("diagnosis_notes", "").strip(),
+        emergency_contact=request.form.get("emergency_contact", "").strip(),
+        preferred_language=request.form.get("preferred_language", "").strip(),
+        consent_confirmed=request.form.get("consent_confirmed") == "yes",
+        message="\n".join([
+            f"Preferred date: {preferred_date}",
+            f"Preferred time: {preferred_time}",
+            f"Service needed: {service_needed}",
+            f"Person needing care: {request.form.get('care_recipient', '').strip()}",
+            f"Service address: {request.form.get('service_address', '').strip()}",
+            f"City: {request.form.get('city', '').strip()}",
+            f"Desired start date: {request.form.get('start_date', '').strip()}",
+            f"Skilled or non-skilled: {request.form.get('care_level', '').strip()}",
+            f"Specific needs: {request.form.get('specific_needs', '').strip()}",
+            f"Services needed: {request.form.get('services_needed', '').strip()}",
+            f"Hours per week: {request.form.get('hours_per_week', '').strip()}",
+            f"From what time to what time: {request.form.get('schedule_preference', '').strip()}",
+            f"How they will pay: {request.form.get('payment_method', '').strip()}",
+            f"Mobility needs: {request.form.get('mobility_needs', '').strip()}",
+            f"Diagnosis or condition notes: {request.form.get('diagnosis_notes', '').strip()}",
+            f"Emergency contact: {request.form.get('emergency_contact', '').strip()}",
+            f"Preferred language: {request.form.get('preferred_language', '').strip()}",
+            f"Consent confirmed: {'Yes' if request.form.get('consent_confirmed') == 'yes' else 'No'}",
+            f"Start timeline: {request.form.get('start_timeline', '').strip()}",
+            f"Notes: {request.form.get('message', '').strip()}",
+        ]),
+    )
+    db.session.add(inquiry)
+    db.session.commit()
+    send_admin_notification(
+        f"New {reason.lower()} request",
+        f"Name: {inquiry.name}\nEmail: {inquiry.email}\nPhone: {inquiry.phone}\n{inquiry.message}",
+        reply_to=inquiry.email,
+    )
+    return inquiry
+
+
 @main_bp.route("/free-consultation", methods=["GET", "POST"])
 def free_consultation():
     if request.method == "POST":
-        inquiry = Inquiry(
-            name=request.form.get("name", "").strip(),
-            email=request.form.get("email", "").strip(),
-            phone=request.form.get("phone", "").strip(),
-            reason="Free consultation",
-            care_recipient=request.form.get("care_recipient", "").strip(),
-            service_address=request.form.get("service_address", "").strip(),
-            city=request.form.get("city", "").strip(),
-            start_date=request.form.get("start_date", "").strip(),
-            start_timeline=request.form.get("start_timeline", "").strip(),
-            services_needed=request.form.get("services_needed", "").strip(),
-            schedule_preference=request.form.get("schedule_preference", "").strip(),
-            mobility_needs=request.form.get("mobility_needs", "").strip(),
-            diagnosis_notes=request.form.get("diagnosis_notes", "").strip(),
-            emergency_contact=request.form.get("emergency_contact", "").strip(),
-            preferred_language=request.form.get("preferred_language", "").strip(),
-            consent_confirmed=request.form.get("consent_confirmed") == "yes",
-            message="\n".join([
-                f"Person needing care: {request.form.get('care_recipient', '').strip()}",
-                f"Service address: {request.form.get('service_address', '').strip()}",
-                f"City: {request.form.get('city', '').strip()}",
-                f"Desired start date: {request.form.get('start_date', '').strip()}",
-                f"Skilled or non-skilled: {request.form.get('care_level', '').strip()}",
-                f"Specific needs: {request.form.get('specific_needs', '').strip()}",
-                f"Services needed: {request.form.get('services_needed', '').strip()}",
-                f"Hours per week: {request.form.get('hours_per_week', '').strip()}",
-                f"From what time to what time: {request.form.get('schedule_preference', '').strip()}",
-                f"How they will pay: {request.form.get('payment_method', '').strip()}",
-                f"Mobility needs: {request.form.get('mobility_needs', '').strip()}",
-                f"Diagnosis or condition notes: {request.form.get('diagnosis_notes', '').strip()}",
-                f"Emergency contact: {request.form.get('emergency_contact', '').strip()}",
-                f"Preferred language: {request.form.get('preferred_language', '').strip()}",
-                f"Consent confirmed: {'Yes' if request.form.get('consent_confirmed') == 'yes' else 'No'}",
-                f"Start timeline: {request.form.get('start_timeline', '').strip()}",
-                f"Notes: {request.form.get('message', '').strip()}",
-            ]),
-        )
-        db.session.add(inquiry)
-        db.session.commit()
-
-        send_admin_notification(
-            "New free consultation request",
-            f"Name: {inquiry.name}\nEmail: {inquiry.email}\nPhone: {inquiry.phone}\n{inquiry.message}",
-            reply_to=inquiry.email,
-        )
-
+        create_consultation_inquiry("Free consultation")
         return redirect(url_for("main.thank_you", reason="consultation"))
 
     return render_template(
@@ -1121,6 +1096,55 @@ def free_consultation():
         trust_badges=TRUST_BADGES,
         care_plan_preview=CARE_PLAN_PREVIEW,
     )
+
+
+@main_bp.route("/schedule-consultation", methods=["GET", "POST"])
+def schedule_consultation():
+    if request.method == "POST":
+        create_consultation_inquiry("Scheduled consultation")
+        flash("Your consultation request was sent. Staff will follow up as soon as possible.", "success")
+        return redirect(url_for("main.thank_you", reason="consultation"))
+
+    return render_template(
+        "schedule_consultation.html",
+        services=SERVICES,
+        service_areas=SERVICE_AREAS,
+        consultation_steps=CONSULTATION_STEPS,
+    )
+
+
+@main_bp.route("/quick-message", methods=["POST"])
+def quick_message():
+    contact = request.form.get("contact", "").strip()
+    inquiry = Inquiry(
+        name=request.form.get("name", "").strip() or "Quick Message Visitor",
+        email=contact if "@" in contact else "",
+        phone=contact if "@" not in contact else "",
+        reason="Quick Message",
+        message=request.form.get("message", "").strip(),
+    )
+    if not inquiry.message:
+        flash("Please enter a message before sending.", "danger")
+        return redirect(request.referrer or url_for("main.contact"))
+
+    db.session.add(inquiry)
+    db.session.commit()
+    send_admin_notification(
+        "New quick message from website chat",
+        "\n".join([
+            f"Name: {inquiry.name}",
+            f"Contact: {contact}",
+            f"Message: {inquiry.message}",
+        ]),
+        reply_to=inquiry.email or None,
+    )
+    flash("Your quick message was sent. Staff will respond as soon as possible.", "success")
+    return redirect(request.referrer or url_for("main.thank_you", reason="message"))
+
+
+@main_bp.route("/portal")
+def portal():
+    return render_template("portal.html")
 
 
 @main_bp.route("/care-standards")
@@ -1168,7 +1192,6 @@ def launch_readiness():
         "launch_readiness.html",
         readiness_items=READINESS_ITEMS,
         launch_status=launch_status_items(),
-        package_sections=PACKAGE_COMPLETION_SECTIONS,
     )
 
 
@@ -1250,6 +1273,77 @@ def launch_status_items():
             "ready": approved_photos_ready,
         },
     ]
+
+
+def seo_checklist_items():
+    endpoints = {rule.endpoint for rule in current_app.url_map.iter_rules()}
+    public_urls = public_sitemap_urls()
+    has_metadata = True
+    analytics_id = current_app.config.get("GOOGLE_ANALYTICS_ID", "")
+    search_console = current_app.config.get("GOOGLE_SITE_VERIFICATION", "")
+    return [
+        {
+            "label": "Sitemap XML",
+            "ready": "main.sitemap_xml" in endpoints,
+            "detail": f"{len(public_urls)} public URLs are included in /sitemap.xml.",
+            "href": url_for("main.sitemap_xml"),
+        },
+        {
+            "label": "Robots TXT",
+            "ready": "main.robots_txt" in endpoints,
+            "detail": "robots.txt allows public pages and blocks private/admin routes.",
+            "href": url_for("main.robots_txt"),
+        },
+        {
+            "label": "Metadata and Open Graph",
+            "ready": has_metadata,
+            "detail": "Base templates include title, description, canonical URL, Open Graph tags, and LocalBusiness schema.",
+            "href": url_for("main.home"),
+        },
+        {
+            "label": "Google Analytics",
+            "ready": bool(analytics_id),
+            "detail": "GOOGLE_ANALYTICS_ID is configured." if analytics_id else "Ready for integration. Add GOOGLE_ANALYTICS_ID in hosting environment variables.",
+            "href": url_for("main.admin_system_status"),
+        },
+        {
+            "label": "Google Search Console",
+            "ready": bool(search_console),
+            "detail": "GOOGLE_SITE_VERIFICATION is configured." if search_console else "Ready for integration. Add GOOGLE_SITE_VERIFICATION after verifying the domain in Google Search Console.",
+            "href": url_for("main.admin_system_status"),
+        },
+        {
+            "label": "Local SEO Service Areas",
+            "ready": "main.service_areas" in endpoints and len(LOCAL_SEO_PAGES) > 0,
+            "detail": f"{len(SERVICE_AREAS)} service areas and {len(LOCAL_SEO_PAGES)} local SEO pages are available.",
+            "href": url_for("main.service_areas"),
+        },
+        {
+            "label": "SEO-Friendly URLs",
+            "ready": bool(public_urls),
+            "detail": "Public pages use readable URLs for services, resources, service areas, scheduling, and portal access.",
+            "href": url_for("main.admin_seo_checklist"),
+        },
+        {
+            "label": "Directory Listing Readiness",
+            "ready": current_app.config.get("SITE_BASE_URL", "").startswith("https://"),
+            "detail": "NAP details are consistent: Ables Home Healthcare, 301-326-2225, 11510 Georgia Avenue Suite 230 Silver Spring MD 20902.",
+            "href": url_for("main.contact"),
+        },
+    ]
+
+
+@main_bp.route("/admin/seo-checklist")
+@login_required
+def admin_seo_checklist():
+    require_permission("admin:reports")
+    items = seo_checklist_items()
+    return render_template(
+        "admin/seo_checklist.html",
+        items=items,
+        ready_count=sum(1 for item in items if item["ready"]),
+        user=current_user,
+    )
 
 
 @main_bp.route("/resources/<slug>")
@@ -2171,8 +2265,8 @@ def admin_launch_checklist():
         },
         {
             "label": "Privacy reviewed",
-            "ready": current_app.config.get("PRIVACY_REVIEW_CONFIRMED") is True,
-            "detail": "Set PRIVACY_REVIEW_CONFIRMED=true after owner/legal review.",
+            "ready": current_app.config.get("LEGAL_PRIVACY_REVIEW_CONFIRMED") is True,
+            "detail": "Set LEGAL_PRIVACY_REVIEW_CONFIRMED=true after owner/legal review.",
             "href": url_for("main.privacy"),
         },
         {
