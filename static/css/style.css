@@ -246,11 +246,9 @@ body.nav-open .page-shell {
     gap: 1rem;
     height: 100vh;
     left: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
     padding: 1rem 0.85rem;
     position: fixed;
-    scrollbar-gutter: stable;
     top: 0;
     transition: width 0.25s ease, background 0.25s ease;
     width: 76px;
@@ -261,20 +259,20 @@ body.dark-mode .side-nav {
     background: rgba(16, 36, 55, 0.96);
 }
 
-.side-nav::-webkit-scrollbar {
+.side-actions::-webkit-scrollbar {
     width: 8px;
 }
 
-.side-nav::-webkit-scrollbar-track {
+.side-actions::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.side-nav::-webkit-scrollbar-thumb {
+.side-actions::-webkit-scrollbar-thumb {
     background: rgba(0, 97, 195, 0.22);
     border-radius: 999px;
 }
 
-.side-nav::-webkit-scrollbar-thumb:hover {
+.side-actions::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 97, 195, 0.38);
 }
 
@@ -569,6 +567,7 @@ body.dark-mode .side-actions a.is-active {
 .side-links {
     display: grid;
     gap: 0.18rem;
+    flex: 0 0 auto;
     overflow: visible;
 }
 
@@ -632,9 +631,15 @@ body.dark-mode .side-actions a.is-active {
 
 .side-actions {
     display: grid;
+    flex: 1 1 auto;
     gap: 0.55rem;
     margin-top: 0.4rem;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding-bottom: 0.5rem;
+    padding-right: 0.15rem;
+    scrollbar-gutter: stable;
 }
 
 .mode-toggle {
