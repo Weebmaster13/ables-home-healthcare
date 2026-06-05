@@ -877,10 +877,10 @@ body.dark-mode .side-actions a.is-active {
 }
 
 .public-action-tab span {
-    color: var(--muted);
-    font-size: 0.76rem;
+    color: var(--blue);
+    font-size: 0.86rem;
     font-weight: 900;
-    letter-spacing: 0.08em;
+    letter-spacing: 0;
     text-transform: uppercase;
 }
 
@@ -931,9 +931,12 @@ body.dark-mode .side-actions a.is-active {
     background: linear-gradient(135deg, var(--gold), #ffe2a2);
 }
 
-.looking-work-tab span,
 .looking-work-tab strong {
     color: #173047;
+}
+
+.looking-work-tab span {
+    color: var(--blue);
 }
 
 .looking-work-tab:hover,
