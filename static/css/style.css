@@ -856,7 +856,7 @@ body.dark-mode .side-actions a.is-active {
     box-shadow: 0 10px 24px rgba(23, 59, 99, 0.06);
     display: grid;
     gap: 0;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .public-action-tab {
@@ -886,7 +886,8 @@ body.dark-mode .side-actions a.is-active {
 
 .public-action-tab strong {
     color: var(--navy);
-    font-size: 0.95rem;
+    font-size: 1rem;
+    font-weight: 900;
     line-height: 1.35;
     max-width: 24rem;
 }
@@ -903,6 +904,7 @@ body.dark-mode .side-actions a.is-active {
 .tab-benefit-grid b {
     display: block;
     font-size: clamp(0.72rem, 2.3vw, 0.95rem);
+    font-weight: 900;
     line-height: 1.18;
     min-width: 0;
     padding: 0;
