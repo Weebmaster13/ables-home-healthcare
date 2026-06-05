@@ -55,18 +55,20 @@
 
 <section class="promo-video-section">
     <div class="promo-video-copy">
-        <span class="eyebrow">Video ready</span>
+        <span class="eyebrow">About Ables Home Healthcare</span>
         <h2>About Ables Home Healthcare.</h2>
         <p>
-            This section is ready for a future promotional video. Until a real approved
-            video is uploaded, it introduces the company without pretending a video exists.
+            A realistic video preview for families learning about home healthcare,
+            caregiver support, personal care, companion care, and consultation options
+            in Maryland.
         </p>
         <a class="btn btn-primary" href="/schedule-consultation">Schedule Consultation</a>
     </div>
-    <div class="video-placeholder" aria-label="Promotional video placeholder">
-        <div class="play-button" aria-hidden="true"></div>
-        <strong>Promotional Video Ready</strong>
-        <span>Replace this placeholder with an approved company video file or embed.</span>
+    <div class="video-placeholder realistic-video-preview" aria-label="About Ables Home Healthcare promotional video">
+        <video controls preload="metadata" poster="{{ url_for('static', filename='img/care/promo-video-poster.png') }}">
+            <source src="{{ url_for('static', filename='video/ables-home-healthcare-preview.mp4') }}" type="video/mp4">
+            Your browser does not support embedded video. Please contact Ables Home Healthcare to learn more.
+        </video>
     </div>
 </section>
 

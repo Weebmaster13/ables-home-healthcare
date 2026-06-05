@@ -2575,44 +2575,95 @@ body.dark-mode .side-actions a.is-active {
 .video-placeholder {
     align-items: center;
     aspect-ratio: 16 / 9;
-    background:
-        linear-gradient(rgba(11, 49, 82, 0.64), rgba(11, 49, 82, 0.64)),
-        url("../img/care/hero-consultation-v2.png") center / cover;
+    background: #102f4a;
     border-radius: 8px;
     color: #ffffff;
     display: flex;
     flex-direction: column;
     justify-content: center;
     min-height: 230px;
-    padding: 1rem;
+    overflow: hidden;
+    padding: 0;
+    position: relative;
     text-align: center;
 }
 
-.video-placeholder strong {
-    font-size: 1.35rem;
+.realistic-video-preview img {
+    height: 100%;
+    inset: 0;
+    object-fit: cover;
+    position: absolute;
+    transform: scale(1.02);
+    transition: transform 8s ease;
+    width: 100%;
 }
 
-.video-placeholder span {
-    max-width: 34rem;
+.realistic-video-preview video {
+    background: #102f4a;
+    border: 0;
+    display: block;
+    height: 100%;
+    object-fit: cover;
+    position: relative;
+    width: 100%;
+    z-index: 2;
 }
 
-.play-button {
+.realistic-video-preview:hover img {
+    transform: scale(1.07);
+}
+
+.realistic-video-preview:has(img)::before {
+    background: linear-gradient(180deg, rgba(7, 31, 51, 0.08), rgba(7, 31, 51, 0.56));
+    content: "";
+    inset: 0;
+    position: absolute;
+    z-index: 1;
+}
+
+.realistic-video-preview:has(img)::after {
     align-items: center;
     background: rgba(255, 255, 255, 0.92);
     border-radius: 50%;
+    box-shadow: 0 16px 35px rgba(7, 31, 51, 0.26);
+    color: var(--blue);
+    content: "▶";
     display: inline-flex;
-    height: 4rem;
+    font-size: 1.65rem;
+    height: 4.7rem;
     justify-content: center;
-    margin-bottom: 1rem;
-    width: 4rem;
+    left: 50%;
+    line-height: 1;
+    padding-left: 0.2rem;
+    position: absolute;
+    top: 46%;
+    transform: translate(-50%, -50%);
+    width: 4.7rem;
+    z-index: 2;
 }
 
-.play-button::before {
-    border-bottom: 0.75rem solid transparent;
-    border-left: 1.15rem solid var(--blue);
-    border-top: 0.75rem solid transparent;
-    content: "";
-    margin-left: 0.25rem;
+.video-preview-caption {
+    bottom: 0;
+    left: 0;
+    padding: 1.1rem;
+    position: absolute;
+    right: 0;
+    text-align: left;
+    z-index: 2;
+}
+
+.video-preview-caption strong,
+.video-preview-caption span {
+    display: block;
+}
+
+.video-preview-caption strong {
+    font-size: 1.35rem;
+}
+
+.video-preview-caption span {
+    color: rgba(255, 255, 255, 0.86);
+    max-width: 42rem;
 }
 
 .portal-role-grid,
