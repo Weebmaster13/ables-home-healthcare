@@ -58,7 +58,11 @@
         function describe(field) {
             var label = form.querySelector('label[for="' + CSS.escape(field.id) + '"]');
             var name = label ? label.textContent.replace(/\*|\(required\)/gi, "").trim() : field.name;
-            return name + " " + (field.validationMessage || "").toLowerCase();
+            // Lead with the label so the sentence reads naturally. Wrap it in
+            // quotes instead of prefixing "The", which turns labels that
+            // already start with a possessive ("Your name") into awkward text.
+            var reason = (field.validationMessage || "").trim().replace(/\.+$/, "").toLowerCase();
+            return reason ? "\"" + name + "\": " + reason + "." : "\"" + name + "\" is not valid.";
         }
 
         form.addEventListener("submit", function (event) {
@@ -84,7 +88,7 @@
                 if (status) {
                     status.hidden = false;
                     status.className = "form-alert form-alert--danger";
-                    status.textContent = "Please review the highlighted fields: " + describe(firstInvalid) + ".";
+                    status.textContent = "Please review the highlighted fields. " + describe(firstInvalid);
                 }
                 firstInvalid.focus();
                 return;
