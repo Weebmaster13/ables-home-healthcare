@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /caregiver/
+Disallow: /dashboard
+Disallow: /profile
+Disallow: /request-care
+Sitemap: https://weebmaster13.github.io/ables-home-healthcare/sitemap.xml
