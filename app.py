@@ -138,7 +138,7 @@ def register_security_headers(app):
             "Content-Security-Policy",
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://translate.google.com https://translate.googleapis.com; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://translate.googleapis.com https://translate.google.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://translate.googleapis.com https://translate.google.com; "
             "img-src 'self' data: https: http://127.0.0.1:5000; "
             "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
             "connect-src 'self' https://translate.googleapis.com https://translate.google.com; "

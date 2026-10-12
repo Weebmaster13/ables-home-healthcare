@@ -2,16 +2,15 @@ services:
   - type: web
     name: ables-home-healthcare
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
     preDeployCommand: flask --app app db upgrade
     startCommand: gunicorn wsgi:app
     healthCheckPath: /healthz
     autoDeploy: false
-    disk:
-      name: ables-uploads
-      mountPath: /var/data
-      sizeGB: 1
+    # NOTE: Free web services have no persistent disk, so uploads and any
+    # local files are ephemeral (lost on restart/redeploy). Relational data
+    # lives in the Postgres database below.
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.10
@@ -30,7 +29,7 @@ services:
           name: ables-postgres
           property: connectionString
       - key: UPLOAD_FOLDER
-        value: /var/data/uploads
+        value: /tmp/ables-uploads
       - key: MAX_CONTENT_LENGTH
         value: "5242880"
       - key: SESSION_HOURS
@@ -78,4 +77,6 @@ services:
 
 databases:
   - name: ables-postgres
-    plan: starter
+    plan: free
+    # NOTE: Free Postgres expires 30 days after creation, has no backups,
+    # and is limited to 1 GB. Upgrade to a paid plan before real use.

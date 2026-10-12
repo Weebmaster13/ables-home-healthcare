@@ -482,6 +482,7 @@ PUBLIC_STATIC_ROUTES = [
     "main.administrator",
     "main.careers",
     "main.contact",
+    "main.care",
     "main.faq",
     "main.privacy",
     "main.terms",
@@ -734,7 +735,7 @@ HERO_SLIDES = [
         "theme": "hero-local-support",
         "image": "img/care/home-services-v2.png",
         "eyebrow": "Flexible local support",
-        "title": "Call us at 301-326-2225.",
+        "title": "Call us at 301-455-3030.",
         "body": "Fax: 301-326-2270. Email: admin@ableshomehealthcare.com.",
     },
 ]
@@ -799,7 +800,7 @@ LOCAL_SEO_PAGES = [
         "city": "Maryland",
         "service": "home care",
         "body": "Ables Home Healthcare serves approved Maryland counties and Baltimore City with skilled and non-skilled nursing care support.",
-        "local_detail": "Call 301-326-2225 to confirm availability for the client's exact address, schedule, and care needs.",
+        "local_detail": "Call 301-455-3030 to confirm availability for the client's exact address, schedule, and care needs.",
     },
     {
         "slug": "personal-care-montgomery-county-md",
@@ -914,6 +915,16 @@ def home():
         care_plan_preview=CARE_PLAN_PREVIEW,
         company_metrics=COMPANY_METRICS,
         audience_paths=AUDIENCE_PATHS,
+    )
+
+
+@main_bp.route("/care")
+def care():
+    return render_template(
+        "care.html",
+        services=SERVICES,
+        service_areas=SERVICE_AREAS,
+        consultation_steps=CONSULTATION_STEPS,
     )
 
 
@@ -1327,7 +1338,7 @@ def seo_checklist_items():
         {
             "label": "Directory Listing Readiness",
             "ready": current_app.config.get("SITE_BASE_URL", "").startswith("https://"),
-            "detail": "NAP details are consistent: Ables Home Healthcare, 301-326-2225, 11510 Georgia Avenue Suite 230 Silver Spring MD 20902.",
+            "detail": "NAP details are consistent: Ables Home Healthcare, 301-455-3030, 11510 Georgia Avenue Suite 230 Silver Spring MD 20902.",
             "href": url_for("main.contact"),
         },
     ]
@@ -1489,7 +1500,7 @@ def employment_application():
                 ]),
                 reply_to=request.form.get("email", "").strip(),
             )
-            flash("This application is for CNA, LPN, and RN caregivers right now. Please call the office at 301-326-2225.", "warning")
+            flash("This application is for CNA, LPN, and RN caregivers right now. Please call the office at 301-455-3030.", "warning")
             return render_template("employment_application.html", blocked_application=True)
 
         resume_filename = save_application_upload(request.files.get("resume"))
@@ -1586,7 +1597,7 @@ def download_referral_form():
         "Notes:",
         "",
         "Submit to: admin@ableshomehealthcare.com",
-        "Phone: (301) 326-2225",
+        "Phone: (301) 455-3030",
     ])
     response = make_response(content)
     response.headers["Content-Type"] = "text/plain"

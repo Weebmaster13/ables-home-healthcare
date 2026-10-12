@@ -3,7 +3,6 @@
     const sideNav = document.getElementById("sideNav");
     const navToggle = document.getElementById("navToggle");
     const mobileNavToggle = document.getElementById("mobileNavToggle");
-    const modeToggle = document.getElementById("modeToggle");
     const languageSelect = document.getElementById("languageSelect");
     const languageMessage = document.getElementById("languageMessage");
     const cookieBanner = document.getElementById("cookieBanner");
@@ -11,11 +10,6 @@
     const quickChatToggle = document.getElementById("quickChatToggle");
     const quickChatPanel = document.getElementById("quickChatPanel");
     const desktopQuery = window.matchMedia("(min-width: 992px)");
-
-    const savedTheme = localStorage.getItem("ables-theme");
-    if (savedTheme === "dark") {
-        body.classList.add("dark-mode");
-    }
 
     if (localStorage.getItem("ables-nav") === "collapsed") {
         body.classList.add("nav-collapsed");
@@ -40,14 +34,6 @@
             quickChatPanel.toggleAttribute("hidden", !shouldOpen);
             quickChatToggle.setAttribute("aria-expanded", String(shouldOpen));
         });
-    }
-
-    function syncModeText() {
-        if (!modeToggle) {
-            return;
-        }
-
-        modeToggle.textContent = body.classList.contains("dark-mode") ? "Light Mode" : "Dark Mode";
     }
 
     function toggleNav() {
@@ -76,16 +62,6 @@
     if (mobileNavToggle) {
         mobileNavToggle.setAttribute("aria-expanded", "false");
         mobileNavToggle.addEventListener("click", toggleNav);
-    }
-
-    if (modeToggle) {
-        modeToggle.setAttribute("aria-pressed", body.classList.contains("dark-mode") ? "true" : "false");
-        modeToggle.addEventListener("click", function () {
-            body.classList.toggle("dark-mode");
-            localStorage.setItem("ables-theme", body.classList.contains("dark-mode") ? "dark" : "light");
-            syncModeText();
-            modeToggle.setAttribute("aria-pressed", body.classList.contains("dark-mode") ? "true" : "false");
-        });
     }
 
     if (languageSelect) {
@@ -998,10 +974,39 @@
     });
 
     desktopQuery.addEventListener("change", function () {
-        sideNav.classList.remove("is-open");
+        if (sideNav) {
+            sideNav.classList.remove("is-open");
+        }
         body.classList.remove("nav-open");
     });
 
-    syncModeText();
+    // Redesign enhancements (free, no dependency): scrim close + header shadow.
+    try {
+        var scrim = document.getElementById("navScrim");
+        if (scrim) {
+            scrim.addEventListener("click", function () {
+                if (sideNav) { sideNav.classList.remove("is-open"); }
+                body.classList.remove("nav-open");
+            });
+        }
+        if (sideNav) {
+            sideNav.querySelectorAll("a").forEach(function (link) {
+                link.addEventListener("click", function () {
+                    if (!desktopQuery.matches) {
+                        sideNav.classList.remove("is-open");
+                        body.classList.remove("nav-open");
+                    }
+                });
+            });
+        }
+        var header = document.getElementById("siteHeader");
+        if (header) {
+            var onScroll = function () {
+                header.classList.toggle("is-scrolled", window.scrollY > 8);
+            };
+            window.addEventListener("scroll", onScroll, { passive: true });
+            onScroll();
+        }
+    } catch (e) { /* no-op: core nav still works */ }
 })();
 

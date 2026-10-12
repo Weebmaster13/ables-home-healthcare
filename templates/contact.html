@@ -11,7 +11,7 @@
     <p>Questions about services, referrals, appointments, or caregiver opportunities? We are ready to help.</p>
     <div class="hero-actions">
         <a class="btn btn-primary btn-lg" href="/free-consultation">Become a Client</a>
-        <a class="btn btn-light btn-lg" href="tel:3013262225">Call Now</a>
+        <a class="btn btn-light btn-lg" href="tel:+13014553030">Call Now</a>
     </div>
 </div>
 
@@ -26,20 +26,22 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label class="form-label">Full Name</label>
-                    <input name="name" class="form-control" required>
+                    <label class="form-label" for="contactName">Full name <span aria-hidden="true">*</span></label>
+                    <input id="contactName" name="name" class="form-control" autocomplete="name" required>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Email Address</label>
-                    <input name="email" type="email" class="form-control" required>
+                    <label class="form-label" for="contactEmail">Email address <span aria-hidden="true">*</span></label>
+                    <input id="contactEmail" name="email" type="email" class="form-control" autocomplete="email" required aria-describedby="contactEmailHelp">
+                    <div id="contactEmailHelp" class="form-text">We reply to this address about your message.</div>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Phone Number</label>
-                    <input name="phone" class="form-control">
+                    <label class="form-label" for="contactPhone">Phone number <span class="form-optional">(optional)</span></label>
+                    <input id="contactPhone" name="phone" type="tel" inputmode="tel" class="form-control" autocomplete="tel" aria-describedby="contactPhoneHelp">
+                    <div id="contactPhoneHelp" class="form-text">Add a number if you prefer a call back.</div>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Reason for Contact</label>
-                    <select name="reason" class="form-select">
+                    <label class="form-label" for="contactReason">Reason for contact</label>
+                    <select id="contactReason" name="reason" class="form-select">
                         <option>Set an appointment</option>
                         <option>Send a referral</option>
                         <option>Ask about services</option>
@@ -47,11 +49,12 @@
                     </select>
                 </div>
                 <div class="col-12">
-                    <label class="form-label">Message</label>
-                    <textarea name="message" rows="5" class="form-control" required></textarea>
+                    <label class="form-label" for="contactMessage">Message <span aria-hidden="true">*</span></label>
+                    <textarea id="contactMessage" name="message" rows="5" class="form-control" required aria-describedby="contactMessageHelp" placeholder="Who needs care, what kind of help, and the best way to reach you."></textarea>
+                    <div id="contactMessageHelp" class="form-text">Do not include Social Security numbers. For emergencies, call 911.</div>
                 </div>
                 <div class="col-12">
-                    <button class="btn btn-primary">Submit</button>
+                    <button class="btn btn-primary" type="submit">Send Message</button>
                 </div>
             </div>
         </form>
@@ -60,7 +63,7 @@
     <div class="col-lg-5">
         <div class="contact-panel h-100">
             <h2>Contact Information</h2>
-            <p><strong>Tel:</strong> <a href="tel:3013262225">301-326-2225</a></p>
+            <p><strong>Tel:</strong> <a href="tel:+13014553030">301-455-3030</a></p>
             <p><strong>Fax:</strong> 301-326-2270</p>
             <p><strong>Email:</strong> <a href="mailto:admin@ableshomehealthcare.com">admin@ableshomehealthcare.com</a></p>
             <p><strong>Address:</strong><br>11510 Georgia Avenue Suite 230 Silver Spring MD 20902</p>
