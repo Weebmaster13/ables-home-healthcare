@@ -22,6 +22,11 @@ def database_url():
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql://", 1)
 
+    # GoDaddy cPanel MySQL uses the pure-Python PyMySQL driver, which has no
+    # compiled dependencies. Normalize bare mysql:// URLs the same way.
+    if url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+pymysql://", 1)
+
     return url
 
 
