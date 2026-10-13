@@ -1,0 +1,66 @@
+# Free deployment smoke test (no card, no charges, public-repo minutes).
+# Boots the REAL docker-compose.oracle.yml stack on a GitHub runner with
+# throwaway dummy secrets, migrates a throwaway Postgres, and curls the
+# public pages through Nginx. Railway, DNS, and production data untouched.
+name: deployment-smoke
+
+on:
+  push:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.oracle.yml"
+      - "nginx.oracle.conf"
+      - ".github/workflows/deploy-smoke.yml"
+      - "app.py"
+      - "wsgi.py"
+      - "routes.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create throwaway local secrets (CI-only dummies, never production)
+        run: |
+          cat > .env.oracle <<'EOF'
+          SECRET_KEY=ci-smoke-test-only-not-a-secret
+          DATABASE_URL=postgresql://ables:ci-smoke-test-only@db:5432/ables
+          POSTGRES_USER=ables
+          POSTGRES_PASSWORD=ci-smoke-test-only
+          MAIL_SERVER=localhost
+          MAIL_USERNAME=ci
+          MAIL_PASSWORD=ci
+          EOF
+
+      - name: Build and boot the production stack
+        run: docker compose -f docker-compose.oracle.yml up -d --build
+
+      - name: Wait for the web service to turn healthy
+        run: |
+          for i in $(seq 1 24); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' ables-web-1 2>/dev/null)" = "healthy" ]; then
+              echo "web is healthy"; exit 0
+            fi
+            sleep 10
+          done
+          echo "web never turned healthy"; exit 1
+
+      - name: Curl public pages through Nginx
+        run: |
+          curl -fsS http://127.0.0.1/ -o /dev/null
+          curl -fsS http://127.0.0.1/care -o /dev/null
+          curl -fsS http://127.0.0.1/healthz -o /dev/null
+          curl -fsS http://127.0.0.1/ | grep -q "Ables Home Healthcare"
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.oracle.yml logs --tail=100
+
+      - name: Tear everything down
+        if: always()
+        run: docker compose -f docker-compose.oracle.yml down -v
