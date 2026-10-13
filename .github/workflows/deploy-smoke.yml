@@ -35,6 +35,7 @@ jobs:
           MAIL_SERVER=localhost
           MAIL_USERNAME=ci
           MAIL_PASSWORD=ci
+          FORCE_HTTPS=false
           EOF
 
       - name: Build and boot the production stack

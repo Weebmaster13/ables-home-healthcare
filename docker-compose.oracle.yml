@@ -32,7 +32,9 @@ services:
       - .env.oracle
     environment:
       FLASK_ENV: production
-      FORCE_HTTPS: "true"
+      # NOTE: FORCE_HTTPS is intentionally NOT pinned here. The app defaults
+      # it on in production (correct behind TLS-terminating Nginx); test and
+      # staging environments set FORCE_HTTPS=false in their own env file.
       AUTO_MIGRATE_ON_STARTUP: "true"
       SITE_BASE_URL: https://ableshomehealthcare.com
       UPLOAD_FOLDER: /app/instance/uploads
