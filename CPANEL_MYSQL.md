@@ -26,11 +26,15 @@
    `application`; `pip install -r requirements.txt` in the app venv.
 3. **Environment variables** in the Python app (never in files):
    `SECRET_KEY=<long random>`, `FLASK_ENV=production`, `FORCE_HTTPS=true`,
-   `SITE_BASE_URL=https://ableshomehealthcare.com`,
+   `SITE_BASE_URL=https://aks.a28.mytemp.website` for testing (switch to
+   `https://ableshomehealthcare.com` only at approved cutover),
    `DATABASE_URL=mysql+pymysql://USER:PASS@localhost:3306/DBNAME`,
    `ADMIN_EMAIL` + `MAIL_*` pointed at **GoDaddy's SMTP relay**
    (shared hosting restricts outside SMTP; see GoDaddy's "Send form mail
    using an SMTP relay server" doc — password goes in cPanel, not here).
+   If the temporary URL serves plain HTTP only, also set
+   `SESSION_COOKIE_SECURE=false` + `FORCE_HTTPS=false` for testing, then
+   remove both overrides (defaults are secure) before cutover.
 4. **Migrate + seed** (cPanel terminal or SSH):
    `flask --app app db upgrade`, then `seed_production_admin.py` values as
    env vars; change the password immediately.

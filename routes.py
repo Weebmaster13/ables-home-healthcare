@@ -1633,7 +1633,10 @@ def healthz():
         checks["database"] = f"error: {exc}"
 
     try:
-        db.session.execute(text("SELECT COUNT(*) FROM \"user\""))
+        # ORM-based user count: portable across PostgreSQL, SQLite, and
+        # MySQL (raw FROM "user" fails on MySQL: double quotes plus a
+        # reserved table name).
+        db.session.query(User).count()
         db.session.execute(text("SELECT COUNT(*) FROM inquiry"))
         db.session.execute(text("SELECT COUNT(*) FROM caregiver_application"))
         db.session.execute(text("SELECT COUNT(*) FROM notification_log"))

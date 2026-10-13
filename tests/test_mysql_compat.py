@@ -46,6 +46,33 @@ def test_requirements_keep_postgres_and_add_pymysql():
     assert "PyMySQL" in text  # cPanel shared hosting driver
 
 
+def test_secure_cookie_flags_default_on_and_allow_override(monkeypatch):
+    import importlib
+    import config
+    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@localhost:3306/db")
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    importlib.reload(config)
+    try:
+        assert config.Config.SESSION_COOKIE_SECURE is True
+        assert config.Config.REMEMBER_COOKIE_SECURE is True
+    finally:
+        importlib.reload(config)
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    importlib.reload(config)
+    try:
+        assert config.Config.SESSION_COOKIE_SECURE is False
+    finally:
+        importlib.reload(config)
+
+
+def test_healthz_schema_check_has_no_mysql_breakers():
+    import pathlib
+    lines = pathlib.Path("routes.py").read_text(encoding="utf-8").splitlines()
+    code_hits = [line for line in lines if 'FROM "user"' in line and not line.strip().startswith("#")]
+    assert code_hits == []
+
+
 def test_passenger_entrypoint_reexports_app():
     import passenger_wsgi
     assert hasattr(passenger_wsgi, "application")
