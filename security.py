@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import re
 import secrets
 import subprocess
+from urllib.parse import urlparse
 
 from flask import abort, current_app, request
 from flask_login import current_user
@@ -200,6 +201,23 @@ def public_form_is_limited():
 
 def record_public_form():
     PUBLIC_FORM_ATTEMPTS[rate_limit_key()].append(datetime.now(timezone.utc))
+
+
+def safe_redirect_url(value, fallback="/"):
+    """Allow only same-origin relative paths for post-action redirects.
+
+    ``request.referrer`` is attacker-controlled; passing it straight to
+    ``redirect()`` turns every form into an open-redirect phishing vector.
+    Absolute URLs, protocol-relative URLs, and non-path values fall back.
+    """
+    if not value or not isinstance(value, str):
+        return fallback
+    parsed = urlparse(value.strip())
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not parsed.path.startswith("/"):
+        return fallback
+    return value.strip() or fallback
 
 
 def utc_now():

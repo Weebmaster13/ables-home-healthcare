@@ -14,7 +14,7 @@ from sqlalchemy import or_, text
 from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
-from security import audit, generate_recovery_codes, password_feedback, password_is_strong, public_form_is_limited, record_public_form, require_permission, require_role, scan_upload_stream
+from security import audit, generate_recovery_codes, password_feedback, password_is_strong, public_form_is_limited, record_public_form, require_permission, require_role, safe_redirect_url, scan_upload_stream
 from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup
 
 # ---------------- MAIN BLUEPRINT ----------------
@@ -1128,7 +1128,7 @@ def schedule_consultation():
 def quick_message():
     if public_form_is_limited():
         flash("Too many messages sent recently. Please wait a little while.", "danger")
-        return redirect(request.referrer or url_for("main.contact"))
+        return redirect(safe_redirect_url(request.referrer, url_for("main.contact")))
     record_public_form()
     contact = request.form.get("contact", "").strip()
     inquiry = Inquiry(
@@ -1140,7 +1140,7 @@ def quick_message():
     )
     if not inquiry.message:
         flash("Please enter a message before sending.", "danger")
-        return redirect(request.referrer or url_for("main.contact"))
+        return redirect(safe_redirect_url(request.referrer, url_for("main.contact")))
 
     db.session.add(inquiry)
     db.session.commit()
@@ -1154,7 +1154,7 @@ def quick_message():
         reply_to=inquiry.email or None,
     )
     flash("Your quick message was sent. Staff will respond as soon as possible.", "success")
-    return redirect(request.referrer or url_for("main.thank_you", reason="message"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.thank_you", reason="message")))
 
 
 @main_bp.route("/portal")
@@ -2679,7 +2679,7 @@ def admin_send_reminders(label):
     audit("send_visit_reminders", "Appointment", None, f"{label}: sent {sent_count}, skipped {skipped_count}")
     db.session.commit()
     flash(f"Reminder run complete. Sent {sent_count}; skipped {skipped_count} already sent.", "success")
-    return redirect(request.referrer or url_for("main.admin_reports"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.admin_reports")))
 
 
 @main_bp.route("/admin/backups")
@@ -2718,7 +2718,7 @@ def admin_cleanup_backups():
     audit("cleanup_backups", "Backup", None, f"Kept {keep}; removed {len(removed)}")
     db.session.commit()
     flash(f"Backup cleanup complete. Removed {len(removed)} old backup(s).", "success")
-    return redirect(request.referrer or url_for("main.admin_backups"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.admin_backups")))
 
 
 @main_bp.route("/admin/backups/<path:filename>/delete", methods=["POST"])
@@ -3474,7 +3474,7 @@ def archive_document(document_id):
     audit("archive_document", "ClientDocument", document.id, document.title)
     db.session.commit()
     flash("Document archived.", "success")
-    return redirect(request.referrer or url_for("main.documents"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.documents")))
 
 
 @main_bp.route("/documents/<int:document_id>/restore", methods=["POST"])
@@ -3489,7 +3489,7 @@ def restore_document(document_id):
     audit("restore_document", "ClientDocument", document.id, document.title)
     db.session.commit()
     flash("Document restored.", "success")
-    return redirect(request.referrer or url_for("main.documents"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.documents")))
 
 
 @main_bp.route("/documents/<int:document_id>/delete", methods=["POST"])
@@ -3507,7 +3507,7 @@ def delete_document(document_id):
     db.session.delete(document)
     db.session.commit()
     flash("Document permanently deleted.", "success")
-    return redirect(request.referrer or url_for("main.documents"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.documents")))
 
 
 # ---------------- REQUEST CARE ----------------
@@ -3708,7 +3708,7 @@ def assign_caregiver(appointment_id):
             f"{caregiver.name if caregiver else 'Caregiver'} already has a visit at this date and time. Check Override conflict to assign anyway.",
             "danger",
         )
-        return redirect(request.referrer or url_for("main.admin_appointments"))
+        return redirect(safe_redirect_url(request.referrer, url_for("main.admin_appointments")))
 
     appointment.caregiver_id = caregiver_id
     appointment.status = "assigned"
@@ -3721,7 +3721,7 @@ def assign_caregiver(appointment_id):
 
     db.session.commit()
 
-    return redirect(request.referrer or url_for("main.admin_appointments"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.admin_appointments")))
 
 
 @main_bp.route("/admin/appointment/<int:appointment_id>/move", methods=["POST"])
@@ -3759,7 +3759,7 @@ def create_recurring_appointments(appointment_id):
     start_date = appointment_date_or_none(source.date)
     if not start_date:
         flash("Add a valid appointment date before creating recurring visits.", "danger")
-        return redirect(request.referrer or url_for("main.admin_appointments"))
+        return redirect(safe_redirect_url(request.referrer, url_for("main.admin_appointments")))
 
     try:
         count = int(request.form.get("count") or request.form.get("weeks", "4"))
@@ -3825,7 +3825,7 @@ def create_recurring_appointments(appointment_id):
     )
     db.session.commit()
     flash(f"Created {created} recurring visit(s). Skipped {skipped} duplicate(s).", "success")
-    return redirect(request.referrer or url_for("main.admin_schedule"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.admin_schedule")))
 
 
 @main_bp.route("/admin/recurring/<group_id>/<action>", methods=["POST"])
@@ -3848,7 +3848,7 @@ def admin_update_recurring_series(group_id, action):
     audit("update_recurring_series", "Appointment", None, f"{group_id}: {action}")
     db.session.commit()
     flash(f"Recurring series {action}d.", "success")
-    return redirect(request.referrer or url_for("main.admin_schedule"))
+    return redirect(safe_redirect_url(request.referrer, url_for("main.admin_schedule")))
 
 
 # ---------------- CAREGIVER SCHEDULE ----------------
