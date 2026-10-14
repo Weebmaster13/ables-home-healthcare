@@ -8,3 +8,4 @@ instance/logs/
 .env.local
 .env.production
 .env.oracle
+.secrets.cpanel

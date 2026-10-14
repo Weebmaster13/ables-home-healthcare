@@ -12,6 +12,12 @@
 - `passenger_wsgi.py` (new): re-exports the existing WSGI app for
   Passenger. Startup file = `passenger_wsgi.py`, entry point =
   `application`. No app logic changed.
+- `config.py`: production without `DATABASE_URL` now fails fast instead of
+  silently booting on local SQLite; secure-cookie flags accept env
+  overrides (defaults unchanged and secure).
+- `SECRET_KEY` for cPanel lives ONLY in the local ignored file
+  `.secrets.cpanel` (see `CPANEL_SECRET_KEY=` there) — never committed,
+  never pasted anywhere except the cPanel Environment Variables screen.
 - Untouched on purpose: models, migrations (backend-agnostic Alembic
   chain), datetime handling (`normalize_dt` already naive/aware-safe),
   uploads (plain filesystem paths, persist on home-dir disk), seeding
@@ -40,6 +46,10 @@ Clone the repo (`cpanel-mysql-port` branch content) to exactly this path
 using cPanel Terminal or SSH:
 
 `git clone -b cpanel-mysql-port https://github.com/Weebmaster13/ables-home-healthcare /home/soev6l6iqyxn/ables-home-healthcare`
+
+Use the temporary domain at its **root only**
+(`https://aks.a28.mytemp.website/`) — the app builds every URL from the
+domain root and does NOT support subpaths like `/ables-test`.
 
 That one folder provides everything Passenger needs (`passenger_wsgi.py`,
 `wsgi.py`, app code, `migrations/`, `templates/`, `static/`,
@@ -89,9 +99,14 @@ uploads, logs) — the server creates its own. No other uploads needed.
    3, plus `ADMIN_SEED_EMAIL/NAME/PASSWORD`), then run
    `flask --app app db upgrade`, then `python seed_production_admin.py`;
    change the password immediately.
-5. Verify on the temp URL: `/`, `/care`, one form POST, login, `/healthz`,
-   a file upload, a sent email. Cut over DNS only on explicit approval
-   (rollback = restore old DNS).
+5. Safe smoke test (BEFORE migrations/admin — nothing is created yet):
+   open `/` and `/care` (expect 200), then `/healthz` (expect 200 with
+   `"database_schema": "error"` until step 6 runs — that error is normal
+   pre-migration, not a failure). Check the Passenger log for
+   "Listening at". Do NOT submit forms or log in yet.
+6. Separately approved steps ONLY: `flask db upgrade`, admin seeding,
+   then full verification (form POST, login, upload, email). Cut over DNS
+   only on explicit approval (rollback = restore old DNS).
 
 ## Known cosmetic follow-ups (not blockers)
 

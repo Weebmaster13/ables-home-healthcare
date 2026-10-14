@@ -1,6 +1,8 @@
 """MySQL/cPanel compatibility tests (no MySQL server needed)."""
 import os
 
+import pytest
+
 
 def _load_config(monkeypatch, url):
     monkeypatch.setenv("DATABASE_URL", url)
@@ -44,6 +46,21 @@ def test_requirements_keep_postgres_and_add_pymysql():
     text = open("requirements.txt", encoding="utf-8").read()
     assert "psycopg2-binary" in text  # Railway production stays intact
     assert "PyMySQL" in text  # cPanel shared hosting driver
+
+
+def test_production_without_database_url_fails_fast(monkeypatch):
+    import importlib
+    import config
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    # load_dotenv would otherwise restore DATABASE_URL from .env.example
+    monkeypatch.setenv("ENV_FILE", ".env.nonexistent-for-test")
+    try:
+        with pytest.raises(RuntimeError, match="DATABASE_URL is required"):
+            importlib.reload(config)
+    finally:
+        monkeypatch.delenv("FLASK_ENV", raising=False)
+        importlib.reload(config)
 
 
 def test_secure_cookie_flags_default_on_and_allow_override(monkeypatch):
