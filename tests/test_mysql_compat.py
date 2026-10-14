@@ -77,3 +77,31 @@ def test_passenger_entrypoint_reexports_app():
     import passenger_wsgi
     assert hasattr(passenger_wsgi, "application")
     assert passenger_wsgi.application is not None
+
+
+def test_codebase_parses_under_python_311_grammar():
+    """cPanel tops out at 3.11: no 3.12-only syntax may ship.
+
+    Uses ast feature_version, so it runs on any newer interpreter.
+    """
+    import ast
+    import pathlib
+    roots = [
+        pathlib.Path("app.py"),
+        pathlib.Path("wsgi.py"),
+        pathlib.Path("passenger_wsgi.py"),
+        pathlib.Path("config.py"),
+        pathlib.Path("models.py"),
+        pathlib.Path("routes.py"),
+        *sorted(pathlib.Path("auth").glob("*.py")),
+        *sorted(pathlib.Path("migrations/versions").glob("*.py")),
+    ]
+    assert roots, "expected project sources to exist"
+    for path in roots:
+        if path.name == "__init__.py" and "migrations" in str(path):
+            continue
+        try:
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path),
+                      feature_version=(3, 11))
+        except SyntaxError as exc:
+            raise AssertionError(f"{path} needs newer than Python 3.11: {exc}")
