@@ -179,6 +179,29 @@ def clear_login_failures():
     LOGIN_ATTEMPTS.pop(rate_limit_key(), None)
 
 
+PUBLIC_FORM_ATTEMPTS = defaultdict(list)
+PUBLIC_FORM_LIMIT = 10
+PUBLIC_FORM_WINDOW = timedelta(minutes=10)
+
+
+def public_form_is_limited():
+    """Separate throttle bucket for unauthenticated public forms.
+
+    Kept apart from the login bucket so form spam can never lock an IP
+    out of signing in.
+    """
+    key = rate_limit_key()
+    now = datetime.now(timezone.utc)
+    PUBLIC_FORM_ATTEMPTS[key] = [
+        item for item in PUBLIC_FORM_ATTEMPTS[key] if now - item < PUBLIC_FORM_WINDOW
+    ]
+    return len(PUBLIC_FORM_ATTEMPTS[key]) >= PUBLIC_FORM_LIMIT
+
+
+def record_public_form():
+    PUBLIC_FORM_ATTEMPTS[rate_limit_key()].append(datetime.now(timezone.utc))
+
+
 def utc_now():
     return datetime.now(timezone.utc)
 

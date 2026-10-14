@@ -59,6 +59,9 @@ class Config:
     ).rstrip("/")
     SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Reconnect transparently when the database closes idle connections
+    # (common on shared hosting). Verified safe on SQLite/PostgreSQL/MySQL.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(BASE_DIR, "instance", "uploads"))
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(5 * 1024 * 1024)))
     PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)

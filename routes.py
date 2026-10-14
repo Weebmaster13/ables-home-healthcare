@@ -14,7 +14,7 @@ from sqlalchemy import or_, text
 from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
-from security import audit, generate_recovery_codes, password_feedback, password_is_strong, require_permission, require_role, scan_upload_stream
+from security import audit, generate_recovery_codes, password_feedback, password_is_strong, public_form_is_limited, record_public_form, require_permission, require_role, scan_upload_stream
 from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup
 
 # ---------------- MAIN BLUEPRINT ----------------
@@ -1126,6 +1126,10 @@ def schedule_consultation():
 
 @main_bp.route("/quick-message", methods=["POST"])
 def quick_message():
+    if public_form_is_limited():
+        flash("Too many messages sent recently. Please wait a little while.", "danger")
+        return redirect(request.referrer or url_for("main.contact"))
+    record_public_form()
     contact = request.form.get("contact", "").strip()
     inquiry = Inquiry(
         name=request.form.get("name", "").strip() or "Quick Message Visitor",
@@ -1385,6 +1389,10 @@ def local_seo_page(slug):
 @main_bp.route("/referrals", methods=["GET", "POST"])
 def referrals():
     if request.method == "POST":
+        if public_form_is_limited():
+            flash("Too many submissions recently. Please wait a little while.", "danger")
+            return redirect(url_for("main.referrals"))
+        record_public_form()
         referral = Referral(
             referral_source=request.form.get("referral_source", "").strip(),
             source_phone=request.form.get("source_phone", "").strip(),
@@ -1450,6 +1458,10 @@ def careers():
 @main_bp.route("/contact", methods=["GET", "POST"])
 def contact():
     if request.method == "POST":
+        if public_form_is_limited():
+            flash("Too many messages sent recently. Please wait a little while.", "danger")
+            return redirect(url_for("main.contact"))
+        record_public_form()
         inquiry = Inquiry(
             name=request.form.get("name", "").strip(),
             email=request.form.get("email", "").strip(),
@@ -1629,6 +1641,7 @@ def healthz():
         db.session.execute(text("SELECT 1"))
         checks["database"] = "ok"
     except Exception as exc:
+        db.session.rollback()
         current_app.logger.exception("Health check database failure")
         checks["database"] = f"error: {exc}"
 
@@ -1642,6 +1655,7 @@ def healthz():
         db.session.execute(text("SELECT COUNT(*) FROM notification_log"))
         checks["database_schema"] = "ok"
     except Exception as exc:
+        db.session.rollback()
         current_app.logger.exception("Health check database schema failure")
         checks["database_schema"] = f"error: {exc}"
 

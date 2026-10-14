@@ -48,6 +48,11 @@ def test_requirements_keep_postgres_and_add_pymysql():
     assert "PyMySQL" in text  # cPanel shared hosting driver
 
 
+def test_engine_uses_pre_ping_for_stale_connections():
+    from app import app
+    assert app.config.get("SQLALCHEMY_ENGINE_OPTIONS", {}).get("pool_pre_ping") is True
+
+
 def test_production_without_database_url_fails_fast(monkeypatch):
     import importlib
     import config
