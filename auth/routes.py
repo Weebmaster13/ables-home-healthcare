@@ -37,16 +37,22 @@ def register():
 
     if request.method == "POST":
 
+        if login_is_limited():
+            flash("Too many attempts. Please wait and try again.", "danger")
+            return redirect(url_for("auth.register"))
+
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
 
         if password != confirm_password:
+            record_login_failure()
             flash("Passwords do not match.", "danger")
             return redirect(url_for("auth.register"))
 
         if not password_is_strong(password):
+            record_login_failure()
             feedback = password_feedback(password)
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("auth.register"))
@@ -56,6 +62,7 @@ def register():
         ).first()
 
         if existing_user:
+            record_login_failure()
             flash("Email already registered.", "danger")
             return redirect(url_for("auth.register"))
 

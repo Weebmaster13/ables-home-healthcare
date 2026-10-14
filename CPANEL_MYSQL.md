@@ -73,7 +73,7 @@ uploads, logs) — the server creates its own. No other uploads needed.
    password **[DB PASSWORD — generate, store privately]**.
 2. **Setup Python App**: Python **3.11.16** (verified compatible — see tests), app root = repo
    folder, startup file `passenger_wsgi.py`, entry point `application`;
-   `pip install -r requirements.txt` in the app venv (`gunicorn` and
+   `pip install -r requirements-cpanel.txt (cPanel-only minimal set; requirements.txt stays for Railway)` in the app venv (`gunicorn` and
    `psycopg2-binary` install but stay unused here — harmless).
 3. **Environment variables you can set immediately** (Python app →
    Environment Variables screen; never in files). Generate the secret with
@@ -104,9 +104,63 @@ uploads, logs) — the server creates its own. No other uploads needed.
    `"database_schema": "error"` until step 6 runs — that error is normal
    pre-migration, not a failure). Check the Passenger log for
    "Listening at". Do NOT submit forms or log in yet.
+   Before that, run the read-only preflight from the app root
+   (`python preflight_cpanel.py` with the same env exported): it checks
+   config, DB reachability, migration status, upload writability, and the
+   Passenger entrypoint without migrating, seeding, or sending anything.
 6. Separately approved steps ONLY: `flask db upgrade`, admin seeding,
    then full verification (form POST, login, upload, email). Cut over DNS
    only on explicit approval (rollback = restore old DNS).
+
+## Boot-failure triage (Passenger error page on every path)
+
+Symptom: every URL — including `/healthz` and static files — returns
+Phusion's "Web application could not be started". That page means the app
+crashed during **import**, before serving anything.
+
+ narrowed diagnosis (verify against the server state before acting):
+- The first upload (commit `734dea6` era) has NO fail-fast guard, so a
+  missing `DATABASE_URL` there boots SQLite and serves pages — it canNOT
+  produce this page. An import-level failure is therefore near-certain:
+  either dependencies were never installed (`Run pip install` result was
+  never confirmed), or the startup file / entry point / app root is
+  mismatched.
+- After uploading the fixed package, a missing `DATABASE_URL` with
+  `FLASK_ENV=production` fails fast with `RuntimeError: DATABASE_URL is
+  required...` in the Passenger log — that message means "set the env
+  var", not "the code is broken".
+
+Check in this order (read-only first):
+1. cPanel Python app: does it show packages installed for
+   `requirements.txt`? If unknown, re-run pip install from the app UI.
+2. File Manager: open `/home/soev6l6iqyxn/logs/passenger.log`, read the
+   last ~30 lines. `ModuleNotFoundError: No module named 'flask'` (or any
+   app import) = step 1 incomplete. `RuntimeError: DATABASE_URL` = set the
+   env var and restart. Anything else = paste the exact lines for review.
+3. Only then: re-upload the current package, restart the app, re-check.
+
+## Optional data move from Railway (separate approval required)
+
+The GoDaddy database starts empty; nothing is copied automatically.
+If existing Railway rows must move over, use the reviewed copy script —
+never `pg_dump` output restored blindly, never manual SQL edits:
+
+1. Back up Railway first (Railway dashboard → database → backup/export)
+   and confirm where that backup is stored.
+2. Run Alembic on the empty GoDaddy database first
+   (`flask --app app db upgrade` with the cPanel env exported).
+3. Dry run (reads both sides, writes nothing):
+   `python migrate_data.py --from "$RAILWAY_DATABASE_URL" --to "$CPANEL_DATABASE_URL"`
+4. Only on explicit approval, run the same command with `--execute`,
+   then compare the printed per-table counts on both sides.
+5. Copy uploaded files separately over SFTP — the script prints every
+   referenced resume/document filename because files are NOT in the
+   database. Admin accounts are re-seeded fresh; do not copy password
+   hashes by hand.
+
+The script refuses non-empty targets and identical source/target, copies
+explicit primary keys so relationships survive, and never drops, truncates,
+deletes, or alters schema on either side.
 
 ## Known cosmetic follow-ups (not blockers)
 

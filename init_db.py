@@ -1,3 +1,13 @@
+import os
+
+
+if os.environ.get("FLASK_ENV", "").lower() == "production":
+    raise SystemExit(
+        "init_db.py is for local development only and seeds a known "
+        "password. In production, run migrations (flask --app app db "
+        "upgrade) and create the first admin with seed_production_admin.py."
+    )
+
 from app import app
 from extensions import db
 from models import User
