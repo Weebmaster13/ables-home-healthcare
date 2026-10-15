@@ -1,0 +1,43 @@
+# Recurring dependency audit (read-only, no deploys, no charges).
+# Runs pip-audit against BOTH deployment requirements files on a weekly
+# schedule, on every requirements change, and on demand.
+#
+# Audit-failure handling:
+# - A failed job means an advisory matched a pinned package. It does NOT
+#   change code, requirements, or production. The fix flow is: reproduce
+#   locally with `python -m pip_audit -r <file>`, upgrade the pin in a
+#   branch, run the full suite (`python -m pytest -q`), and deploy only
+#   through the normal approved cPanel update (backup first, then
+#   pip install + Restart). Until then the failure stays visible here.
+# - Reproduce locally any time with the same two commands below.
+name: dependency-audit
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"  # Mondays 12:00 UTC
+  push:
+    paths:
+      - "requirements.txt"
+      - "requirements-cpanel.txt"
+      - ".github/workflows/dependency-audit.yml"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit (tooling only, not the app)
+        run: pip install pip-audit
+
+      - name: Audit Railway/Render requirements
+        run: python -m pip_audit -r requirements.txt
+
+      - name: Audit cPanel requirements
+        run: python -m pip_audit -r requirements-cpanel.txt

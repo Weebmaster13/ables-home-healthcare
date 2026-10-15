@@ -113,3 +113,47 @@ def test_traversal_filename_cannot_escape_upload_dir(tmp_path, monkeypatch):
         stored, _ = save_private_upload(exe, "documents", "probe",
                                         allowed_document)
         assert stored == ""
+
+
+def _concrete_path(template):
+    import re
+    def fill(match):
+        inner = match.group(1)
+        name = inner.split(":")[-1]
+        if inner.startswith("int:"):
+            return "1"
+        return "probe"
+    return re.sub(r"<([^>]+)>", fill, template)
+
+
+def test_every_gated_get_route_denies_anonymous():
+    """Systematic sweep: no login-required GET route may serve 200 anonymously.
+
+    Uses the AST route inventory as the oracle. POST-only routes are
+    skipped (state-changing; never touched by a sweep).
+    """
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path("scripts").resolve()))
+    import route_inventory
+    from pathlib import Path as P
+    rows = []
+    import ast as py_ast
+    for src in (P("routes.py"), P("auth") / "routes.py"):
+        rows.extend(route_inventory.analyze_source(
+            py_ast.parse(src.read_text(encoding="utf-8"))))
+    app.config["WTF_CSRF_ENABLED"] = False
+    failures = []
+    with app.test_client() as client:
+        for row in rows:
+            if not row["login"] or "GET" not in row["methods"]:
+                continue
+            url = _concrete_path(row["path"])
+            try:
+                response = client.get(url, follow_redirects=False)
+            except Exception as exc:  # noqa: BLE001 - record, don't hide
+                failures.append(f"{url}: raised {type(exc).__name__}")
+                continue
+            if response.status_code == 200:
+                failures.append(f"{url}: anonymous 200")
+    assert failures == [], f"ungated routes: {failures[:10]}"

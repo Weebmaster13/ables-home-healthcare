@@ -143,6 +143,9 @@ def login():
         clear_user_login_failures(user)
         audit("login_success", "User", user.id, "Successful login")
         db.session.commit()
+        # Regenerate the session so a planted pre-login cookie can never
+        # become an authenticated session ( fixation defense).
+        session.clear()
         session.permanent = True
         login_user(user)
         stamp = session_password_stamp(user)
@@ -198,7 +201,13 @@ def forgot_password():
         user = User.query.filter_by(email=email).first()
 
         if user:
-            token = reset_serializer().dumps(user.email, salt="password-reset")
+            # Payload binds the token to the current password version: any
+            # password change (reset, change-password, admin action) alters
+            # password_changed_at, so an already-used token will not verify
+            # a second time. Legacy rows without a timestamp use None.
+            token = reset_serializer().dumps(
+                {"e": user.email, "c": session_password_stamp(user)},
+                salt="password-reset")
             # Build the link from the operator-configured canonical base URL,
             # never from the request Host: url_for(..., _external=True) trusts
             # the Host header, letting a forged Host poison emailed links.
@@ -244,15 +253,25 @@ def reset_password(token):
         return redirect(url_for("main.dashboard"))
 
     try:
-        email = reset_serializer().loads(token, salt="password-reset", max_age=3600)
+        payload = reset_serializer().loads(token, salt="password-reset", max_age=3600)
     except SignatureExpired:
         flash("This reset link expired. Please request a new one.", "danger")
         return redirect(url_for("auth.forgot_password"))
     except BadSignature:
         flash("Invalid reset link.", "danger")
         return redirect(url_for("auth.forgot_password"))
+    if isinstance(payload, dict):
+        email, stamp = payload.get("e", ""), payload.get("c")
+    else:
+        # Pre-hardening token format (email only): honored once, then the
+        # password change below invalidates anything outstanding.
+        email, stamp = payload, None
 
     user = User.query.filter_by(email=email).first_or_404()
+    if session_password_stamp(user) != stamp:
+        flash("This reset link has already been used. "
+              "Please request a new one.", "danger")
+        return redirect(url_for("auth.forgot_password"))
 
     if request.method == "POST":
         password = request.form.get("password", "")

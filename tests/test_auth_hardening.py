@@ -147,3 +147,62 @@ def test_password_change_invalidates_sibling_session_keeps_changer():
         with app.app_context():
             UserModel.query.filter_by(id=uid).delete()
             db_ext.session.commit()
+
+
+def test_reset_token_cannot_be_reused():
+    from urllib.parse import urlparse
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        from test_core_features import create_user as make_user
+        user, _ = make_user("client")
+        email, uid = user.email, user.id
+    try:
+        with app.test_client() as client:
+            posted = client.post("/auth/forgot-password",
+                                 data={"email": email},
+                                 follow_redirects=False)
+            assert posted.status_code == 302
+            with client.session_transaction() as session:
+                dev_url = session.get("dev_password_reset_url")
+            assert dev_url, "dev reset URL expected without SMTP"
+            path = urlparse(dev_url).path
+            first = client.post(path, data={
+                "password": "OnceUsedSafe2026!",
+                "confirm_password": "OnceUsedSafe2026!",
+            }, follow_redirects=False)
+            assert first.status_code == 302
+            assert "/auth/login" in first.headers["Location"]
+            second = client.get(path, follow_redirects=False)
+            assert second.status_code == 302
+            assert "/auth/forgot-password" in second.headers["Location"]
+    finally:
+        with app.app_context():
+            from extensions import db as db_ext
+            from models import User as UserModel
+            UserModel.query.filter_by(id=uid).delete()
+            db_ext.session.commit()
+
+
+def test_login_regenerates_session():
+    from types import SimpleNamespace
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        from test_core_features import create_user as make_user
+        user, password = make_user("client")
+        email, uid = user.email, user.id
+    try:
+        with app.test_client() as client:
+            with client.session_transaction() as session:
+                session["planted"] = "attacker-value"
+            from test_core_features import login as login_helper
+            helper = SimpleNamespace(email=email, id=uid)
+            assert login_helper(client, helper, password).status_code == 302
+            with client.session_transaction() as session:
+                assert "planted" not in session
+            assert client.get("/dashboard").status_code == 200
+    finally:
+        with app.app_context():
+            from extensions import db as db_ext
+            from models import User as UserModel
+            UserModel.query.filter_by(id=uid).delete()
+            db_ext.session.commit()
