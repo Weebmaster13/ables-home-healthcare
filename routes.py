@@ -2699,7 +2699,19 @@ def admin_backups():
 @login_required
 def admin_create_backup():
     require_role("admin")
-    backup_path = create_backup(include_uploads=True)
+    try:
+        backup_path = create_backup(include_uploads=True)
+    except FileNotFoundError:
+        # Production runs MySQL: there is no local ablehome.db to copy.
+        # Export the database through cPanel instead (see CPANEL_MYSQL.md);
+        # never treat a missing file backup as success.
+        audit("create_backup_unavailable", "Backup", None,
+              "SQLite file backup unavailable (non-SQLite database)")
+        db.session.commit()
+        flash("File backup needs the local database file, which MySQL "
+              "production does not have. Export the database through "
+              "cPanel instead.", "warning")
+        return redirect(url_for("main.admin_backups"))
     audit("create_backup", "Backup", None, backup_path.name)
     flash(f"Backup created: {backup_path.name}", "success")
     return redirect(url_for("main.admin_backups"))

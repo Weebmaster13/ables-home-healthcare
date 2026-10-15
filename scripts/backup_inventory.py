@@ -40,13 +40,13 @@ def sha256_of(path, chunk=1024 * 1024):
 
 
 def inventory(paths):
-    files, skipped_secrets, total_bytes = [], 0, 0
+    files, skipped_secrets, skipped_links, total_bytes = [], 0, 0, 0
     for root in paths:
         root = Path(root)
-        if root.is_file():
+        if root.is_file() and not root.is_symlink():
             candidates = [root]
             base = root.parent
-        elif root.is_dir():
+        elif root.is_dir() and not root.is_symlink():
             base = root
             candidates = sorted(
                 p for p in root.rglob("*")
@@ -55,6 +55,11 @@ def inventory(paths):
         else:
             return None, f"path not found: {root}"
         for path in candidates:
+            if path.is_symlink():
+                # Never follow links: a backup must be self-contained, and a
+                # link could pull production paths or escape the archive.
+                skipped_links += 1
+                continue
             if looks_secret(path.name):
                 skipped_secrets += 1
                 continue
@@ -76,6 +81,7 @@ def inventory(paths):
         "roots": [str(p) for p in paths],
         "files": files,
         "skipped_secret_names_count": skipped_secrets,
+        "skipped_symlinks_count": skipped_links,
         "total_bytes": total_bytes,
     }
     return manifest, None
@@ -97,6 +103,9 @@ def main(argv=None):
     if manifest["skipped_secret_names_count"]:
         print(f"[WARN] {manifest['skipped_secret_names_count']} secret-named "
               f"file(s) excluded by name pattern (fetch via cPanel only)")
+    if manifest["skipped_symlinks_count"]:
+        print(f"[WARN] {manifest['skipped_symlinks_count']} symlink(s) "
+              f"excluded (backups must be self-contained)")
     return 0
 
 

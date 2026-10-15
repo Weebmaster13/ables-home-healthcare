@@ -6,7 +6,6 @@ import re
 import smtplib
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-import base64
 
 from flask import current_app
 
