@@ -224,6 +224,18 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+def session_password_stamp(user):
+    """Stamp binding a login session to the current password version.
+
+    Stored in the session at login and refreshed on password change; a
+    before_request check logs out sessions whose stamp no longer matches,
+    so password changes and resets invalidate OTHER sessions too.
+    Returns None for legacy rows without a timestamp (no check enforced).
+    """
+    stamped = normalize_dt(getattr(user, "password_changed_at", None))
+    return stamped.isoformat() if stamped else None
+
+
 def normalize_dt(value):
     if not value:
         return None

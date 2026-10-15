@@ -2,8 +2,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import logging
 
-from flask import Flask, redirect, request, url_for
-from flask_login import current_user
+from flask import Flask, redirect, request, session, url_for
+from flask_login import current_user, logout_user
 from flask_migrate import upgrade
 from config import Config
 from extensions import csrf, db, login_manager, migrate
@@ -29,6 +29,7 @@ def create_app():
 
     configure_logging(app)
     register_https_enforcement(app)
+    register_session_staleness_check(app)
     register_admin_recovery_gate(app)
     register_security_headers(app)
     register_error_handlers(app)
@@ -84,6 +85,27 @@ def register_template_helpers(app):
             ).count()
 
         return counts
+
+
+def register_session_staleness_check(app):
+    @app.before_request
+    def reject_stale_password_session():
+        # Password changes/resets bump password_changed_at; sessions stamped
+        # with an older value are logged out on their next request. Sessions
+        # predating this feature carry no stamp and are logged out once
+        # (one-time re-login, fail-closed). Legacy NULL timestamps skip
+        # the check so old rows are never locked out by it.
+        if not current_user.is_authenticated or request.endpoint == "static":
+            return None
+        from security import session_password_stamp
+        current_stamp = session_password_stamp(current_user)
+        if not current_stamp:
+            return None
+        if session.get("pwd_ts") != current_stamp:
+            logout_user()
+            session.pop("pwd_ts", None)
+            return redirect(url_for("auth.login"))
+        return None
 
 
 def register_admin_recovery_gate(app):

@@ -133,6 +133,33 @@ def test_bad_manifest_inputs_rejected(tmp_path):
     assert verify_backup_manifest.main([str(wrong), str(tmp_path)]) == 1
 
 
+# --- route inventory ---
+
+def test_inventory_flags_ungated_sensitive_route():
+    import ast
+    import route_inventory
+    tree = ast.parse(
+        "@x.route('/admin/secret')\n"
+        "def view():\n"
+        "    return 'x'\n")
+    rows = route_inventory.analyze_source(tree)
+    assert rows and rows[0]["login"] is False
+    tree = ast.parse(
+        "@x.route('/admin/secret')\n"
+        "@login_required\n"
+        "def view():\n"
+        "    require_role('admin')\n"
+        "    return 'x'\n")
+    rows = route_inventory.analyze_source(tree)
+    assert rows[0]["login"] is True
+    assert rows[0]["roles"] == ["admin"]
+
+
+def test_real_tree_has_no_ungated_sensitive_routes():
+    import route_inventory
+    assert route_inventory.main(["--flags-only"]) == 0
+
+
 # --- readiness aggregator ---
 
 def test_readiness_runs_clean_locally(capsys):

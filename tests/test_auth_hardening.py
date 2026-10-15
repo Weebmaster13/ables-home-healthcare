@@ -81,3 +81,69 @@ def test_redact_for_log_keeps_ordinary_text():
     assert "redacted-reset-link" in red
     red = redact_for_log("path /reset-password/abc123 end")
     assert "abc123" not in red
+
+
+def _login_client(password, email):
+    from test_core_features import login as login_helper
+    from types import SimpleNamespace
+    app.config["WTF_CSRF_ENABLED"] = False
+    client = app.test_client()
+    with app.app_context():
+        from models import User as UserModel
+        user = UserModel.query.filter_by(email=email).first()
+        helper_user = SimpleNamespace(email=user.email, id=user.id)
+    assert login_helper(client, helper_user,
+                        password).status_code == 302
+    return client
+
+
+def test_deactivation_kills_live_session():
+    from models import User as UserModel
+    from extensions import db as db_ext
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        from test_core_features import create_user as make_user
+        user, password = make_user("client")
+        email, uid = user.email, user.id
+    client = _login_client(password, email)
+    assert client.get("/dashboard").status_code == 200
+    with app.app_context():
+        row = db_ext.session.get(UserModel, uid)
+        row.is_active_account = False
+        db_ext.session.commit()
+    try:
+        response = client.get("/dashboard", follow_redirects=False)
+        assert response.status_code == 302
+        assert "/auth/login" in response.headers["Location"]
+    finally:
+        with app.app_context():
+            UserModel.query.filter_by(id=uid).delete()
+            db_ext.session.commit()
+
+
+def test_password_change_invalidates_sibling_session_keeps_changer():
+    from models import User as UserModel
+    from extensions import db as db_ext
+    with app.app_context():
+        from test_core_features import create_user as make_user
+        user, password = make_user("client")
+        email, uid = user.email, user.id
+    changer = _login_client(password, email)
+    sibling = _login_client(password, email)
+    assert changer.get("/dashboard").status_code == 200
+    assert sibling.get("/dashboard").status_code == 200
+    try:
+        response = changer.post("/auth/change-password", data={
+            "current_password": password,
+            "password": "BrandNewSafe2026!",
+            "confirm_password": "BrandNewSafe2026!",
+        }, follow_redirects=False)
+        assert response.status_code == 302
+        assert changer.get("/dashboard").status_code == 200
+        stale = sibling.get("/dashboard", follow_redirects=False)
+        assert stale.status_code == 302
+        assert "/auth/login" in stale.headers["Location"]
+    finally:
+        with app.app_context():
+            UserModel.query.filter_by(id=uid).delete()
+            db_ext.session.commit()

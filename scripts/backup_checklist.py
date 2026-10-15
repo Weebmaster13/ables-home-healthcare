@@ -21,12 +21,15 @@ isolated restore in scripts/restore_verify.py succeeds against it.
 """
 
 import json
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Mirrors models.py (db.Model subclasses) + Alembic bookkeeping.
 TABLES = [
@@ -108,6 +111,8 @@ def record_counts(checklist, url):
                                        "WHERE type='table'")}
         for table in checklist["database"]["tables"]:
             if table in existing:
+                if not IDENT.match(table):
+                    return f"FAIL refusing suspicious table name: {table!r}"
                 n = connection.execute(
                     f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
                 checklist["database"]["tables"][table]["count"] = n

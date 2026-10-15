@@ -25,12 +25,15 @@ reported as a verified backup — the verdict line says so explicitly.
 """
 
 import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "scripts"))
+
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 from verify_backup_manifest import verify as verify_files  # noqa: E402
 
@@ -116,6 +119,10 @@ def main(argv=None):
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             db_counts = {}
             for row in tables:
+                if not IDENT.match(row):
+                    print(f"[FAIL] refusing suspicious table name: {row!r}")
+                    failed += 1
+                    continue
                 try:
                     db_counts[row] = conn.execute(
                         f'SELECT COUNT(*) FROM "{row}"').fetchone()[0]

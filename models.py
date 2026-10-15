@@ -291,6 +291,12 @@ class CaregiverOnboardingItem(db.Model):
 # ---------------- USER LOADER ----------------
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    user = db.session.get(User, int(user_id))
+    if user is not None and user.is_active_account is False:
+        # Deactivated accounts lose live sessions immediately instead of
+        # lingering until the 8-hour cookie expires. Only an explicit
+        # False deactivates; NULL legacy rows stay active.
+        return None
+    return user
 
 

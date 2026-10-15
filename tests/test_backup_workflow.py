@@ -94,7 +94,26 @@ def test_record_counts_accepts_disposable_sqlite_only(tmp_path):
     assert backup_checklist.main(
         [str(out), "--record-counts",
          "mysql+pymysql://u:p@h/db"]) == 1
+
+
+def test_record_counts_refuses_suspicious_table_names(tmp_path):
+    out = tmp_path / "check.json"
+    backup_checklist.main([str(out)])
+    data = json.loads(out.read_text())
+    data["database"]["tables"]["weird-table"] = {"count": None}
+    out.write_text(json.dumps(data))
+    copy = tmp_path / "copy.db"
+    conn = sqlite3.connect(copy)
+    with conn:
+        conn.execute('CREATE TABLE "weird-table" (id INTEGER)')
+    assert backup_checklist.main(
+        [str(out), "--record-counts", f"sqlite:///{copy}"]) == 1
+
+
+def test_record_counts_refuses_repo_inside_paths(tmp_path):
     import config as app_config
+    out = tmp_path / "check.json"
+    backup_checklist.main([str(out)])
     repo_db = Path(app_config.BASE_DIR) / "instance" / "x.db"
     assert backup_checklist.main(
         [str(out), "--record-counts", f"sqlite:///{repo_db}"]) == 1

@@ -57,8 +57,30 @@ Never paste passwords, tokens, or client data into chat, tickets, or logs.
    throttles CPU/EP instead — expect slowness, not a bill (fixed plan).
 2. In-app throttles cover login/register/public forms; do not add IP
    blocks without evidence (risk of blocking real families).
-3. If sustained: enable GoDaddy's security product (paid — needs owner
+3. Throttle state model: the per-IP login/form buckets are process-local
+   memory, so each Passenger worker counts independently (N workers ≈
+   N× the nominal limit against a distributed source). The per-account
+   lockout (5 failures / 15 min in the database) is shared across all
+   workers and is the binding control — it cannot be bypassed by
+   spreading attempts across workers, and form spam can never lock a
+   login because the buckets are separate.
+4. If sustained: enable GoDaddy's security product (paid — needs owner
    approval) or front with a CDN/WAF (needs DNS change + approval).
+
+## Detecting suspicious activity (read-only)
+
+Use `/admin/audit` filters or CSV export; never paste secrets or client
+data alongside. Look for:
+
+- Repeated `login_failure` rows for one email across many IPs, or one
+  IP across many emails (spray) → consider `/account lockout` status
+  on `/admin/users`; do NOT probe the live login to "test".
+- `account_locked` bursts outside office hours.
+- `admin_recovery_code_failure` rows (someone guessing recovery codes).
+- `reject_upload_scan` rows or odd filenames in `/admin/documents`.
+- `download_backup` / `delete_backup` rows at unexpected times.
+- Passenger log lines with Traceback (app errors, not attacks by
+  themselves — correlate timestamps with the audit export).
 
 ## What OpenCode can/can't do
 

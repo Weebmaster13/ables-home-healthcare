@@ -16,6 +16,7 @@ from security import (
     record_login_failure,
     record_user_login_failure,
     admin_recovery_codes_enabled,
+    session_password_stamp,
     user_is_locked,
     verify_admin_recovery_code,
 )
@@ -144,6 +145,9 @@ def login():
         db.session.commit()
         session.permanent = True
         login_user(user)
+        stamp = session_password_stamp(user)
+        if stamp:
+            session["pwd_ts"] = stamp
 
         flash(
             f"Welcome back, {user.name}!",
@@ -299,6 +303,13 @@ def change_password():
         current_user.password_changed_at = db.func.now()
         audit("change_password", "User", current_user.id, "Password changed")
         db.session.commit()
+        # Keep THIS session alive; every other session for this account
+        # fails the staleness check on its next request.
+        stamp = session_password_stamp(current_user)
+        if stamp:
+            session["pwd_ts"] = stamp
+        else:
+            session.pop("pwd_ts", None)
 
         flash("Password changed successfully.", "success")
         return redirect(url_for("main.dashboard"))
