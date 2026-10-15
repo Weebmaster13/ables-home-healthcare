@@ -11,7 +11,7 @@
     <meta property="og:title" content="{% block og_title %}Ables Home Healthcare{% endblock %}">
     <meta property="og:description" content="{% block og_description %}Skilled and Non-Skilled Nursing Care, client intake, caregiver applications, and home care support in Maryland.{% endblock %}">
     <meta property="og:url" content="{{ config.SITE_BASE_URL }}{{ request.path }}">
-    <meta property="og:image" content="{{ url_for('static', filename='img/brand/ablelogo-strip.jpg', _external=True) }}">
+    <meta property="og:image" content="{{ config.SITE_BASE_URL }}{{ url_for('static', filename='img/brand/ablelogo-strip.jpg') }}">
     {% if config.GOOGLE_SITE_VERIFICATION %}
     <meta name="google-site-verification" content="{{ config.GOOGLE_SITE_VERIFICATION }}">
     {% endif %}
@@ -22,7 +22,7 @@
       "@id": "{{ config.SITE_BASE_URL }}/#business",
       "name": "Ables Home Healthcare",
       "url": "{{ config.SITE_BASE_URL }}",
-      "image": "{{ url_for('static', filename='img/brand/ablelogo-strip.jpg', _external=True) }}",
+      "image": "{{ config.SITE_BASE_URL }}{{ url_for('static', filename='img/brand/ablelogo-strip.jpg') }}",
       "telephone": "+1-301-455-3030",
       "email": "admin@ableshomehealthcare.com",
       "address": {

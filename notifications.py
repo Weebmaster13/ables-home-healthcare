@@ -1,5 +1,8 @@
 from email.message import EmailMessage
 from html import escape
+
+import base64
+import re
 import smtplib
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -29,13 +32,27 @@ def log_notification(channel, recipient, subject, status, provider="", related_t
         current_app.logger.warning("Could not queue notification log: %s", exc)
 
 
+def redact_for_log(text):
+    """Strip password-reset links/tokens before writing bodies to logs.
+
+    Skipped-email log lines live in instance/logs/app.log, readable via
+    File Manager — a reset token there would let a log reader hijack the
+    account. Redaction is deliberately narrow (reset links only) so the
+    remaining log line stays useful for delivery debugging.
+    """
+    text = str(text or "")
+    text = re.sub(r"https?://\S*reset-password\S*", "[redacted-reset-link]", text)
+    text = re.sub(r"/reset-password/\S+", "/reset-password/[redacted]", text)
+    return text
+
+
 def send_email_notification(to_email, subject, body, reply_to=None, related_type=None, related_id=None, html_body=None):
     """Send email when SMTP is configured; otherwise log it."""
     app = current_app
     mail_server = app.config.get("MAIL_SERVER")
 
     if not mail_server or not to_email:
-        app.logger.info("Email notification skipped: %s\n%s", subject, body)
+        app.logger.info("Email notification skipped: %s\n%s", subject, redact_for_log(body))
         log_notification("email", to_email, subject, "skipped", "smtp", related_type, related_id, "SMTP or recipient missing")
         return False
 

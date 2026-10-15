@@ -195,7 +195,13 @@ def forgot_password():
 
         if user:
             token = reset_serializer().dumps(user.email, salt="password-reset")
-            reset_url = url_for("auth.reset_password", token=token, _external=True)
+            # Build the link from the operator-configured canonical base URL,
+            # never from the request Host: url_for(..., _external=True) trusts
+            # the Host header, letting a forged Host poison emailed links.
+            reset_url = (
+                current_app.config.get("SITE_BASE_URL", "").rstrip("/")
+                + url_for("auth.reset_password", token=token)
+            )
             body = (
                 f"Hello {user.name},\n\n"
                 "A password reset was requested for your Ables Home Healthcare account.\n\n"
