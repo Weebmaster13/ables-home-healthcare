@@ -8,6 +8,11 @@ ENV_FILE = os.environ.get("ENV_FILE", ".env")
 load_dotenv(os.path.join(BASE_DIR, ENV_FILE))
 
 def database_url():
+    if os.environ.get("FLASK_ENV", "").lower() == "production" and not os.environ.get("DATABASE_URL"):
+        raise RuntimeError(
+            "DATABASE_URL is required when FLASK_ENV=production: refusing to "
+            "boot on the local SQLite fallback with production settings."
+        )
     url = os.environ.get(
         "DATABASE_URL",
         "sqlite:///" + os.path.join(BASE_DIR, "instance", "ablehome.db")

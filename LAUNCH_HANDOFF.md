@@ -50,29 +50,29 @@ Then submit test forms at:
 
 ## Production Database
 
-Use PostgreSQL before collecting real client, caregiver, or referral data:
+Production runs on GoDaddy cPanel with **MySQL/MariaDB**. Create the database
+and user in cPanel → MySQL Databases, then set:
 
 ```text
-DATABASE_URL=postgresql://REPLACE_USER:REPLACE_PASSWORD@REPLACE_HOST:5432/REPLACE_DATABASE
+DATABASE_URL=mysql+pymysql://REPLACE_USER:REPLACE_PASSWORD@localhost:3306/REPLACE_DATABASE
 ```
 
-The prepared `.env.production` file already has production mode, HTTPS forcing,
-the public domain, and a strong generated secret key. Replace only the PostgreSQL
-and SMTP placeholders with the real values from the host and email provider.
+(PostgreSQL is also supported if the owner chooses a different host:
+`DATABASE_URL=postgresql://REPLACE_USER:REPLACE_PASSWORD@REPLACE_HOST:5432/REPLACE_DATABASE`.)
 
-Run migrations on the production host:
+Confirm the live engine on the host before trusting any backup, then run the
+read-only preflight and migrations:
 
-```powershell
-flask --app app db upgrade
+```bash
+python preflight_cpanel.py            # config/DB/migrations/uploads/entrypoint, no writes
+flask --app app db upgrade            # run once, as an approved step
 python deploy_check.py --production
 ```
 
-For managed production backups, enable automated PostgreSQL backups through the hosting provider.
-For manual PostgreSQL backup when `pg_dump` is installed:
-
-```powershell
-python postgres_backup.py
-```
+For backups: `python backup_db.py` dispatches on `DATABASE_URL` (`mysqldump`/
+`mariadb-dump` for MySQL, `pg_dump` for PostgreSQL) and never silently copies a
+local SQLite file for a server database. Keep a verified copy off-host, and
+verify a restore on an isolated scratch database (see `DEPLOYMENT.md`).
 
 ## Business And Legal Review
 

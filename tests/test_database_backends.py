@@ -222,3 +222,32 @@ def test_health_schema_check_works_on_mysql(monkeypatch):
     assert checks["database_schema"] == "ok"
     assert checks["database"] == "ok"
 
+
+def test_production_without_database_url_fails_fast(monkeypatch):
+    """Production must not silently boot on the local SQLite fallback."""
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="DATABASE_URL is required"):
+        config.database_url()
+
+
+def test_production_with_database_url_is_allowed(monkeypatch):
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", "mysql://user:pass@localhost:3306/ables")
+    assert config.database_url() == "mysql+pymysql://user:pass@localhost:3306/ables"
+
+
+def test_non_production_without_database_url_uses_sqlite(monkeypatch):
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert config.database_url().startswith("sqlite:///")
+
+
+def test_passenger_entrypoint_reexports_wsgi_application():
+    """cPanel/Passenger loads ``passenger_wsgi.application``."""
+    import passenger_wsgi
+
+    assert passenger_wsgi.application is not None
+    assert callable(passenger_wsgi.application)
+
+

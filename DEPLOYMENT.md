@@ -6,27 +6,34 @@ only and are **superseded by this document**.
 
 ## Where production actually runs
 
-The live site https://ableshomehealthcare.com runs on a **GoDaddy VPS**
-(Ubuntu, Docker + Nginx + PostgreSQL). Earlier drafts described Render and
-Railway; those are no longer the production target. Do not configure the app
-against more than one platform at a time.
+**Confirmed from repository + live evidence (read-only):** the live site
+https://ableshomehealthcare.com is served by **GoDaddy cPanel shared hosting
+with Apache + Phusion Passenger**, backed by **MySQL/MariaDB**, using the
+`passenger_wsgi.py` entry point (`application`) and the minimal
+`requirements-cpanel.txt`. The full runbook is **[CPANEL_MYSQL.md](CPANEL_MYSQL.md)**.
 
-> **Open question — confirm the database backend before trusting backups.**
-> A separate branch (`cpanel-mysql-port`) documents a GoDaddy **cPanel**
-> deployment using **MySQL/MariaDB** (`DATABASE_URL=mysql+pymysql://…`) via
-> Phusion Passenger, and the domain resolves to GoDaddy. Do **not assume**
-> either backend is live. Confirm it on the real host first:
+Evidence: the domain resolves to a GoDaddy IP; the live `/healthz` reports
+`database_backend: "other"` (neither PostgreSQL nor SQLite — i.e. MySQL on the
+pre-fix code); and the `cpanel-mysql-port` branch documents the exact cPanel
+Python-app setup. A separate, **superseded** draft ([GODADDY_VPS_DEPLOY.md](GODADDY_VPS_DEPLOY.md))
+proposed a self-managed VPS with Docker + PostgreSQL; that is **not** what is
+running and should not be followed without an owner decision.
+
+Do not configure the app against more than one platform at a time.
+
+> **Before trusting any backup or cutover, confirm the backend on the real
+> host** (read-only; never paste credentials):
 >
 > ```bash
 > echo "$DATABASE_URL" | sed -E 's#(://[^:]+:)[^@]+@#\1***@#'   # scheme only
 > flask --app app db check                                      # driver + schema reachable
-> python -c "import production_check as p; print(p.database_driver_available(__import__('config').database_url()), p.database_backup_tool_available(__import__('config').database_url()))"
+> python preflight_cpanel.py                                    # config/DB/migrations/uploads/entrypoint
 > ```
 >
-> The app supports PostgreSQL **and** MySQL/MariaDB: bare `mysql://` URLs are
+> The app supports MySQL/MariaDB **and** PostgreSQL: bare `mysql://` URLs are
 > normalized to `mysql+pymysql://`, `PyMySQL` is installed, and backups dispatch
-> to `pg_dump` or `mysqldump` accordingly. Whichever backend the host reports is
-> the one to configure.
+> to `mysqldump`/`mariadb-dump` or `pg_dump` accordingly. Use whichever the host
+> actually reports.
 
 ## One deliberate migration strategy
 
@@ -49,7 +56,7 @@ FLASK_ENV=production
 SECRET_KEY=<long random value>
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME   # or mysql+pymysql://USER:PASSWORD@HOST:3306/DBNAME
 SITE_BASE_URL=https://ableshomehealthcare.com
-UPLOAD_FOLDER=/var/lib/ables/uploads      # persistent, NOT /tmp
+UPLOAD_FOLDER=/home/<cpanel-user>/ables-home-healthcare/instance/uploads   # persistent disk, NEVER /tmp
 FORCE_HTTPS=true
 SESSION_HOURS=8
 MAX_CONTENT_LENGTH=5242880
@@ -131,6 +138,51 @@ mysql "$DATABASE_URL" < <extracted>/database.sql
 
 Retention in `backup_db.py` (`cleanup_old_backups`) only deletes **local**
 copies and never the newest one — use it only after off-host copies exist.
+
+### cPanel/MySQL production backup and verified restore
+
+On cPanel the database usually lives on the same host (`localhost`). Do this
+**before** any code change, and never restore over the live database.
+
+```bash
+# 1. Dump the live database to a file OUTSIDE the web root (read-only on prod)
+mysqldump --single-transaction --quick \
+  --host "$DB_HOST" --user "$DB_USER" --result-file="$HOME/backups/ables-$(date +%F).sql" "$DB_NAME"
+# (password: export MYSQL_PWD=... first, or use a ~/.my.cnf with chmod 600)
+
+# 2. Bundle the uploaded documents too (they are NOT in the database)
+tar -czf "$HOME/backups/ables-uploads-$(date +%F).tar.gz" \
+  /home/<cpanel-user>/ables-home-healthcare/instance/uploads
+
+# 3. Verify the dump is real (non-empty, has CREATE TABLE for core tables)
+grep -c "CREATE TABLE" "$HOME/backups/ables-$(date +%F).sql"
+grep -E "CREATE TABLE .*(inquiry|caregiver_application|notification_log)" "$HOME/backups/ables-$(date +%F).sql"
+
+# 4. Store both files OFF the hosting account (owner-controlled, access-restricted).
+```
+
+**Restore drill (isolated — never on the live database):**
+
+```bash
+# Create a scratch database in cPanel's MySQL Databases screen, then:
+mysql --host "$DB_HOST" --user "$DB_USER" -e "CREATE DATABASE ables_restore"
+mysql --host "$DB_HOST" --user "$DB_USER" ables_restore < "$HOME/backups/ables-YYYY-MM-DD.sql"
+
+# Compare representative row counts against production
+mysql --host "$DB_HOST" --user "$DB_USER" ables_restore -e \
+  "SELECT (SELECT COUNT(*) FROM inquiry) inquiries, \
+          (SELECT COUNT(*) FROM caregiver_application) applications, \
+          (SELECT COUNT(*) FROM notification_log) notifications, \
+          (SELECT version_num FROM alembic_version) migration;"
+
+# Point a THROWAWAY copy of the app at ables_restore to confirm it boots and
+# serves pages, then drop the scratch database when done.
+```
+
+A backup is only "verified" once a restore has been performed and the row
+counts / migration head / uploads match. If cPanel permissions or missing
+client tools block the restore drill, record that limitation explicitly rather
+than calling the backup verified.
 
 ## Launch checklist
 

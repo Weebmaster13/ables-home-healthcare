@@ -21,15 +21,28 @@ security fix in `tests/test_core_features.py`.
 
 ## Deployment reality (important)
 
-- The live site https://ableshomehealthcare.com is served by **Apache +
-  Phusion Passenger** behind a WAF (bot challenge). It is NOT Railway/Render.
-  The deployed code is OLDER than this repo — live `/healthz` still leaks
-  operational JSON, while local `/healthz` is a minimal `{"status": "ok"}`.
-  Any fix here must actually be deployed to take effect on the live site.
-- The repo also carries Render/Railway/Docker/GoDaddy-VPS deploy configs.
-  `GODADDY_VPS_DEPLOY.md` describes the Docker + Nginx + Postgres path.
+- The live site https://ableshomehealthcare.com is served by **GoDaddy cPanel
+  shared hosting: Apache + Phusion Passenger + MySQL/MariaDB**, behind a WAF
+  (bot challenge). It is NOT Railway/Render/VPS. Confirmed 2026-10-16 via an
+  external fetcher (sandbox egress to the GoDaddy IP is blocked): live
+  `/healthz` returns the full operational JSON and `database_backend: "other"`
+  — i.e. MySQL on the OLDER, pre-fix code. Local `/healthz` is a minimal
+  `{"status": "ok"}`; any fix must actually be deployed to take effect.
+- cPanel entry point is `passenger_wsgi.py` (startup file) with entry point
+  `application` (re-exports `wsgi.application`, which applies `ProxyFix`).
+  Install the minimal `requirements-cpanel.txt` (no gunicorn/psycopg2 needed).
+  Step-by-step runbook: `CPANEL_MYSQL.md`; authoritative guide: `DEPLOYMENT.md`.
+- `preflight_cpanel.py` is a read-only pre-deploy check (config, DB reachability,
+  migration status, upload writability, Passenger entrypoint). Run it before
+  any migration/seed; it never writes, migrates, seeds, or sends mail.
+- Superseded drafts to ignore unless the owner decides otherwise:
+  `GODADDY_VPS_DEPLOY.md` (Docker + Nginx + PostgreSQL), `RAILWAY_DEPLOY.md`,
+  `DEPLOY_RENDER_FREE.md`. Do not configure more than one platform at a time.
 - Uploads must live on durable private storage. `/tmp` paths (Render free
-  tier) are ephemeral and unsuitable for client documents.
+  tier) are ephemeral and unsuitable for client documents. On cPanel use
+  `/home/<user>/ables-home-healthcare/instance/uploads` (persists on home disk).
+- Production fail-fast: with `FLASK_ENV=production` and no `DATABASE_URL`,
+  `config.database_url()` raises instead of silently booting on SQLite.
 
 ## Conventions and invariants
 

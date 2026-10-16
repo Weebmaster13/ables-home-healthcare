@@ -12,25 +12,26 @@ caregiver, referral, appointment, or document data.
 
 ## 2. Hosting
 
-Production runs on the GoDaddy VPS (Ubuntu, Docker + Nginx + PostgreSQL).
-See `DEPLOYMENT.md` — that is the single authoritative deployment guide.
-Render/Railway files are kept for history only; do not configure more than
-one platform at a time.
+Production runs on **GoDaddy cPanel (Apache + Phusion Passenger) with
+MySQL/MariaDB**. See `DEPLOYMENT.md` (authoritative) and `CPANEL_MYSQL.md`
+(step-by-step cPanel runbook). Render/Railway/VPS files are kept for history
+only; do not configure more than one platform at a time.
 
 Prepared deployment files:
 
-- `Procfile`
-- `runtime.txt` / `.python-version`
-- `gunicorn wsgi:app`
+- `passenger_wsgi.py` (cPanel startup file; entry point `application`)
+- `requirements-cpanel.txt` (minimal cPanel runtime set)
+- `preflight_cpanel.py` (read-only config/DB/entrypoint check)
 - `flask --app app db upgrade` (run once as an explicit deploy step)
-- `/healthz` liveness check
+- `/healthz` minimal liveness check
 
-## 3. PostgreSQL
+## 3. Database (MySQL/MariaDB)
 
-- Create managed PostgreSQL on the host.
-- Set `DATABASE_URL`.
+- Create the database and user in cPanel → **MySQL Databases**.
+- Set `DATABASE_URL=mysql+pymysql://USER:PASSWORD@HOST:3306/DBNAME`.
 - Run `flask --app app db upgrade`.
-- Enable automated PostgreSQL backups.
+- Enable scheduled backups (cPanel backup wizard) **and** keep an off-host copy.
+- Confirm the engine on the host before relying on backups (see `DEPLOYMENT.md`).
 
 ## 4. Email And Forms
 
@@ -83,11 +84,10 @@ VIRUS_SCAN_COMMAND=clamdscan --stream
 
 ## 6. Uploads And Backups
 
-- Set `UPLOAD_FOLDER` to persistent storage (for example `/var/lib/ables/uploads`), never `/tmp`.
-- Long term, move uploads to cloud storage such as S3, Backblaze B2, DigitalOcean Spaces, or Cloudinary.
-- Back up the PostgreSQL database with `python backup_db.py` (uses `pg_dump` when `DATABASE_URL` is PostgreSQL) and keep a verified copy off-host.
-- Keep upload backups separate from database backups.
-- Verify a restore before relying on any backup.
+- Set `UPLOAD_FOLDER` to persistent home-dir storage (for example `/home/<cpanel-user>/ables-home-healthcare/instance/uploads`), never `/tmp`.
+- Confirm uploads survive an app restart and a code update, and that documents cannot be fetched by guessing a URL (authorization is enforced on every download).
+- Back up the database with `python backup_db.py` (uses `mysqldump`/`mariadb-dump` when `DATABASE_URL` is MySQL, `pg_dump` for PostgreSQL) and keep a verified copy off-host.
+- Keep upload backups separate from database backups, and verify a restore on an isolated scratch database before relying on any backup (see `DEPLOYMENT.md`).
 - Review uploaded document privacy and retention rules.
 
 ## 7. Legal And Business Review
