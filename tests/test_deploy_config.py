@@ -114,15 +114,16 @@ def test_a_workflow_runs_the_unit_tests_on_every_push():
     assert unfiltered, "no workflow runs on every push; test-only commits get no CI"
 
 
-def test_deployment_restore_strips_pymysql_driver_suffix():
-    """`mysql "$DATABASE_URL"` fails because the app normalizes to +pymysql.
+def test_deployment_restore_uses_the_tested_client_url_helper():
+    """The restore snippet must use the tested helper, not an inline shell hack.
 
-    The client tools only accept `mysql://`, so the restore instructions must
-    strip the driver suffix before handing the URL to `mysql`.
+    The URL rewriting is covered by executing `backup_db.client_url` in
+    test_database_backends.py; this only checks the doc points at it rather
+    than at a hand-rolled substitution that can drift out of sync.
     """
     text = (ROOT / "DEPLOYMENT.md").read_text()
+    assert "backup_db.client_url" in text
     assert 'mysql "$DATABASE_URL"' not in text
-    assert "CLIENT_URL" in text
 
 
 def test_deployment_uses_db_current_as_the_reachability_probe():
@@ -135,6 +136,26 @@ def test_deployment_uses_db_current_as_the_reachability_probe():
     text = (ROOT / "DEPLOYMENT.md").read_text()
     assert "flask --app app db current" in text
     assert "driver + schema reachable" not in text
+
+
+def test_restore_drill_never_creates_the_scratch_database_from_the_client():
+    """cPanel creates and grants the scratch DB; the client must not CREATE it.
+
+    The old text told the operator to create `ables_restore` in cPanel *and*
+    to run `CREATE DATABASE ables_restore`, which conflicts (or fails, because
+    the account user usually lacks the CREATE privilege).
+    """
+    for name in ("DEPLOYMENT.md", "CPANEL_MYSQL.md"):
+        text = (ROOT / name).read_text()
+        assert "CREATE DATABASE ables_restore" not in text, name
+
+
+def test_cpanel_troubleshooting_uses_the_cpanel_requirements_set():
+    """The boot-failure steps must not tell the operator to install requirements.txt."""
+    text = (ROOT / "CPANEL_MYSQL.md").read_text()
+    troubleshooting = text.split("## Boot-failure triage", 1)[1].split("\n## ", 1)[0]
+    assert "install -r requirements-cpanel.txt" in troubleshooting
+    assert "install -r requirements.txt" not in troubleshooting
 
 
 def test_requirements_include_both_database_drivers():

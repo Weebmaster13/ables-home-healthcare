@@ -173,6 +173,83 @@ def create_mysql_backup(include_uploads=True):
         return backup_path
 
 
+def client_url(url):
+    """Return a URL the native ``mysql``/``psql`` clients can parse.
+
+    The app normalizes bare ``mysql://`` URLs to ``mysql+pymysql://`` so
+    SQLAlchemy picks the right driver, but the native client tools reject the
+    driver suffix. ``pg_restore`` does understand ``postgresql://``, so only
+    the MySQL family is rewritten.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(_normalize_url(url))
+    scheme = parts.scheme
+    if scheme.startswith(("mysql", "mariadb")):
+        scheme = "mysql"
+    elif scheme.startswith("postgres"):
+        scheme = "postgresql"
+    return urlunsplit((scheme, parts.netloc, parts.path, parts.query, parts.fragment))
+
+
+def restore_mysql_dump(dump_path, target_url, allow_live=False):
+    """Load a mysqldump file into ``target_url`` with the native client.
+
+    Connection details are passed as explicit flags (password via ``MYSQL_PWD``
+    so it never reaches the process list) rather than a URL, which avoids the
+    client's URL-parsing quirks entirely.
+
+    Refuses to target the database named by ``DATABASE_URL`` unless
+    ``allow_live`` is set, so a restore drill cannot overwrite production by
+    accident. Raises loudly when the client tool is missing.
+    """
+    target_url = _normalize_url(target_url)
+    if not _is_mysql(target_url):
+        raise RuntimeError("Restore target must be a MySQL/MariaDB URL.")
+
+    host, port, user, password, database = _mysql_dump_credentials(target_url)
+    if not database:
+        raise RuntimeError("Restore target URL does not name a database.")
+
+    live_url = _database_url()
+    if _is_mysql(live_url):
+        live_database = _mysql_dump_credentials(_normalize_url(live_url))[4]
+        if live_database and database == live_database and not allow_live:
+            raise RuntimeError(
+                f"Refusing to restore into {database!r}: it is the live "
+                "DATABASE_URL. Restore into a separate scratch database, or "
+                "pass allow_live=True only if you truly mean to overwrite it."
+            )
+
+    client = shutil.which("mysql") or shutil.which("mariadb")
+    if client is None:
+        raise RuntimeError(
+            "The mysql/mariadb client is required to restore a dump but was "
+            "not found on PATH."
+        )
+
+    dump_path = Path(dump_path)
+    if not dump_path.is_file() or dump_path.stat().st_size == 0:
+        raise RuntimeError(f"Restore source is missing or empty: {dump_path}")
+
+    command = [
+        client,
+        "--host", host,
+        "--port", str(port),
+        "--user", user,
+        database,
+    ]
+    env = dict(os.environ)
+    if password:
+        env["MYSQL_PWD"] = password
+    with open(dump_path, "rb") as source:
+        result = subprocess.run(command, stdin=source, env=env, capture_output=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or b"restore failed").decode("utf-8", "replace").strip()
+        raise RuntimeError(f"Restore failed (exit {result.returncode}): {detail[:300]}")
+    return True, f"Restored {dump_path.name} into {database}."
+
+
 def create_sqlite_backup(include_uploads=True):
     if not DB_PATH.exists():
         raise FileNotFoundError(f"Database not found: {DB_PATH}")
@@ -307,13 +384,56 @@ def _verify_pg_dump_member(archive):
     return True, "Backup verified: archive readable and pg_dump table of contents lists successfully."
 
 
-def main():
-    backup_path = _dispatch_backup(_database_url(), include_uploads=True)
+def main(argv=None):
+    import argparse
 
-    ok, message = verify_backup(backup_path)
-    print(f"{'Backup created' if ok else 'Backup FAILED verification'}: {backup_path} ({message})")
-    if not ok:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--restore-to",
+        metavar="URL",
+        help="Restore the created backup into this MySQL/MariaDB database "
+             "(an isolated scratch database) and report the result. Refuses "
+             "to target the live DATABASE_URL.",
+    )
+    parser.add_argument(
+        "--allow-live",
+        action="store_true",
+        help="Permit --restore-to to target the live DATABASE_URL. Off by "
+             "default so a drill cannot overwrite production by accident.",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        backup_path = _dispatch_backup(_database_url(), include_uploads=True)
+
+        ok, message = verify_backup(backup_path)
+        print(f"{'Backup created' if ok else 'Backup FAILED verification'}: {backup_path} ({message})")
+        if not ok:
+            raise SystemExit(1)
+
+        if args.restore_to:
+            dump_path = backup_path
+            if str(backup_path).endswith(".zip"):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    with zipfile.ZipFile(backup_path) as archive:
+                        if "database.sql" not in archive.namelist():
+                            print("Backup archive has no database.sql member; cannot restore.")
+                            raise SystemExit(1)
+                        archive.extract("database.sql", tmpdir)
+                    dump_path = Path(tmpdir) / "database.sql"
+                    _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
+                    print(restored)
+            else:
+                _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
+                print(restored)
+            print("Restore drill complete. Compare row counts and the alembic revision against production.")
+            return
+    except RuntimeError as error:
+        # Refusals (live target, missing tool, failed dump) should read as a
+        # clear message, not a traceback.
+        print(f"ERROR: {error}")
         raise SystemExit(1)
+
     print("Upload this file to durable, off-site storage to complete a real backup.")
 
 

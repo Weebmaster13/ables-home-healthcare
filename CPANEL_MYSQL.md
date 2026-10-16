@@ -134,7 +134,19 @@ crashed during **import**, before serving anything.
 
 Check in this order (read-only first):
 1. cPanel Python app: does it show packages installed for
-   `requirements.txt`? If unknown, re-run pip install from the app UI.
+   `requirements-cpanel.txt` (the cPanel set — **not** `requirements.txt`)?
+   If unknown, re-run the install **from the app's virtualenv**, using the
+   same command as step 2 of the setup above:
+   ```bash
+   # Run inside the app root; cPanel activates the venv via `source` or the UI.
+   /home/soev6l6iqyxn/virtualenv/ables-home-healthcare/3.11/bin/pip \
+     install -r requirements-cpanel.txt
+   ```
+   Verify the venv is the one Passenger uses (`pip -V` should print a path
+   under `/home/soev6l6iqyxn/virtualenv/...`, not a system Python). Mixing the
+   two requirement sets is a common cause of confusing boot failures: the
+   cPanel set intentionally omits `gunicorn` and `psycopg2-binary`, which
+   Passenger does not need and which can fail to build on shared hosting.
 2. File Manager: open `/home/soev6l6iqyxn/logs/passenger.log`, read the
    last ~30 lines. `ModuleNotFoundError: No module named 'flask'` (or any
    app import) = step 1 incomplete. `RuntimeError: DATABASE_URL` = set the
@@ -162,6 +174,42 @@ never restore a raw dump blindly, never manual SQL edits:
 The script refuses non-empty targets and identical source/target, copies
 explicit primary keys so relationships survive, and never drops, truncates,
 deletes, or alters schema on either side.
+
+## Backup and verified restore drill on cPanel
+
+The full procedure lives in
+[DEPLOYMENT.md](DEPLOYMENT.md#cpanelmysql-production-backup-and-verified-restore)
+(authentication, dump, uploads archive, scratch database, row-count and
+migration-head comparison). Two points that matter here:
+
+- Create the scratch database and grant the user **through cPanel's MySQL
+  Databases screen**, then restore into that existing database. Do not run
+  `CREATE DATABASE` from the MySQL client — the cPanel account user usually
+  lacks the `CREATE` privilege, and if the database already exists the
+  statement fails anyway.
+- Never point the drill at the live database. `python backup_db.py
+  --restore-to "<scratch url>"` refuses to target the database named by
+  `DATABASE_URL` unless you pass `--allow-live`.
+
+## Account-specific values that still need confirmation
+
+The paths, domain, and interpreter version used throughout this document are
+the intended GoDaddy account's values, **not** universal. Confirm each in the
+actual cPanel account before running any command, and record the real value:
+
+| Value in this doc | Confirm in cPanel | Verified? |
+|---|---|---|
+| `/home/soev6l6iqyxn/ables-home-healthcare` | File Manager → app root | [ ] |
+| `/home/soev6l6iqyxn/ables-home-healthcare/instance/uploads` | `UPLOAD_FOLDER` env var | [ ] |
+| `aks.a28.mytemp.website` | Domains → temporary domain | [ ] |
+| Python `3.11.16` | Setup Python App → version list | [ ] |
+| DB host `localhost` | MySQL Databases → hostname | [ ] |
+| `mysqldump` / `mysql` / `tar` present | Terminal → `which mysqldump mysql tar` | [ ] |
+| ClamAV scanner available | Terminal → `which clamdscan` (see DEPLOYMENT.md) | [ ] |
+
+Do not assume `passenger_wsgi.py` guarantees the app boots: the correct
+virtualenv, installed `requirements-cpanel.txt` packages, environment
+variables, and the `application` entry point must all be verified together.
 
 ## Known cosmetic follow-ups (not blockers)
 

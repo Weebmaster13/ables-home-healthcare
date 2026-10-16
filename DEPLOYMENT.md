@@ -159,16 +159,23 @@ Install the matching tool on the host (`pg_dump` or `mysqldump`).
 directory is not a real backup on its own.
 
 Restore test (run periodically, on a scratch database). The client tools do
-**not** understand the SQLAlchemy driver suffix, so strip it first — a
-`mysql+pymysql://` URL passed straight to `mysql` fails to parse:
+**not** understand the SQLAlchemy driver suffix, so use `backup_db.client_url()`
+— a `mysql+pymysql://` URL passed straight to `mysql` fails to parse:
 
 ```bash
 # PostgreSQL (pg_restore does understand the postgresql:// scheme)
 pg_restore --clean --if-exists --dbname "$DATABASE_URL" <extracted>/database.dump
 
-# MySQL/MariaDB: strip the +pymysql driver suffix the app adds
-CLIENT_URL="${DATABASE_URL/mysql+pymysql:/mysql:}"
+# MySQL/MariaDB: let the app rewrite the URL for the native client
+CLIENT_URL=$(python -c "import backup_db; print(backup_db.client_url('$DATABASE_URL'))")
 mysql "$CLIENT_URL" < <extracted>/database.sql
+```
+
+Or run the whole drill (backup + verified restore into a scratch database) in
+one guarded command — it refuses to target the live `DATABASE_URL`:
+
+```bash
+python backup_db.py --restore-to "$SCRATCH_DATABASE_URL"
 ```
 
 Retention in `backup_db.py` (`cleanup_old_backups`) only deletes **local**
@@ -179,11 +186,29 @@ copies and never the newest one — use it only after off-host copies exist.
 On cPanel the database usually lives on the same host (`localhost`). Do this
 **before** any code change, and never restore over the live database.
 
+**Authentication — pick one method and use it for every command below.** The
+MySQL client reads `MYSQL_PWD` from the environment, so the password never
+appears in the process list or in your shell history:
+
 ```bash
-# 1. Dump the live database to a file OUTSIDE the web root (read-only on prod)
+# Option A (recommended): an owner-only defaults file, chmod 600
+cat > "$HOME/.my.cnf" <<'EOF'
+[client]
+host=localhost
+user=CPANEL_DB_USER
+password=CPANEL_DB_PASSWORD
+EOF
+chmod 600 "$HOME/.my.cnf"
+
+# Option B: export the password for the current shell only
+export MYSQL_PWD='CPANEL_DB_PASSWORD'      # do NOT put this in a script or a file
+```
+
+```bash
+# 1. Dump the live database to a file OUTSIDE the web root (read-only on prod).
+#    With ~/.my.cnf in place no password flag is needed.
 mysqldump --single-transaction --quick \
-  --host "$DB_HOST" --user "$DB_USER" --result-file="$HOME/backups/ables-$(date +%F).sql" "$DB_NAME"
-# (password: export MYSQL_PWD=... first, or use a ~/.my.cnf with chmod 600)
+  --result-file="$HOME/backups/ables-$(date +%F).sql" "$DB_NAME"
 
 # 2. Bundle the uploaded documents too (they are NOT in the database)
 tar -czf "$HOME/backups/ables-uploads-$(date +%F).tar.gz" \
@@ -198,20 +223,39 @@ grep -E "CREATE TABLE .*(inquiry|caregiver_application|notification_log)" "$HOME
 
 **Restore drill (isolated — never on the live database):**
 
+Create the scratch database and grant the user **through cPanel's MySQL
+Databases screen first** (Add Database → Add User To Database). cPanel
+provisions the `cpaneluser_` prefix and grants the privileges; a client-side
+`CREATE DATABASE` usually fails because the account user is not granted the
+`CREATE` privilege. Record the exact name cPanel assigns, e.g.
+`cpaneluser_ables_restore`.
+
 ```bash
-# Create a scratch database in cPanel's MySQL Databases screen, then:
-mysql --host "$DB_HOST" --user "$DB_USER" -e "CREATE DATABASE ables_restore"
-mysql --host "$DB_HOST" --user "$DB_USER" ables_restore < "$HOME/backups/ables-YYYY-MM-DD.sql"
+# SCRATCH_DB is the name cPanel created and granted, e.g. cpaneluser_ables_restore.
+# Uses the same authentication method chosen above (no password on the command line).
+SCRATCH_DB=cpaneluser_ables_restore
+
+# Restore into the EXISTING scratch database (no CREATE DATABASE here).
+mysql "$SCRATCH_DB" < "$HOME/backups/ables-YYYY-MM-DD.sql"
 
 # Compare representative row counts against production
-mysql --host "$DB_HOST" --user "$DB_USER" ables_restore -e \
+mysql "$SCRATCH_DB" -e \
   "SELECT (SELECT COUNT(*) FROM inquiry) inquiries, \
           (SELECT COUNT(*) FROM caregiver_application) applications, \
           (SELECT COUNT(*) FROM notification_log) notifications, \
           (SELECT version_num FROM alembic_version) migration;"
 
-# Point a THROWAWAY copy of the app at ables_restore to confirm it boots and
-# serves pages, then drop the scratch database when done.
+# Point a THROWAWAY copy of the app at the scratch database to confirm it boots
+# and serves pages, then drop the scratch database when done.
+```
+
+The guarded helper does the backup-and-restore half of this in one command and
+refuses to target the live database:
+
+```bash
+# DATABASE_URL must be the LIVE database (it is the backup source);
+# --restore-to must be the cPanel-created scratch database.
+python backup_db.py --restore-to "mysql+pymysql://USER:PASS@localhost/$SCRATCH_DB"
 ```
 
 A backup is only "verified" once a restore has been performed and the row
