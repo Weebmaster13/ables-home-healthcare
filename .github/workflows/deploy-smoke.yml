@@ -15,6 +15,11 @@ on:
       - "app.py"
       - "wsgi.py"
       - "routes.py"
+      - "config.py"
+      - "extensions.py"
+      - "models.py"
+      - "security.py"
+      - "notifications.py"
       - "requirements.txt"
   workflow_dispatch:
 
