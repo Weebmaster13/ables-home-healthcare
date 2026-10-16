@@ -134,6 +134,64 @@ def test_restore_raises_on_empty_dump(monkeypatch, tmp_path):
         backup_db.restore_mysql_dump(dump, "mysql+pymysql://u:p@dbhost:3306/scratch")
 
 
+def test_dump_flags_skip_column_statistics_for_mariadb_client(monkeypatch):
+    """The MariaDB client rejects --column-statistics; MySQL 8 needs it."""
+
+    def fake_run(cmd, **kwargs):
+        return backup_db.subprocess.CompletedProcess(
+            cmd, 0, b"mysqldump from 11.8.6-MariaDB, client 10.19 for debian-linux-gnu (x86_64)", b""
+        )
+
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    assert backup_db._dump_client_extra_flags("/usr/bin/mysqldump") == []
+
+
+def test_dump_flags_disable_column_statistics_for_mysql8_client(monkeypatch):
+    """MySQL 8 probes COLUMN_STATISTICS, which MariaDB does not have."""
+
+    def fake_run(cmd, **kwargs):
+        return backup_db.subprocess.CompletedProcess(
+            cmd, 0, b"mysqldump  Ver 8.0.36-0ubuntu0.22.04.1 for Linux on x86_64 (MySQL Community Server)", b""
+        )
+
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    assert backup_db._dump_client_extra_flags("/usr/bin/mysqldump") == ["--column-statistics=0"]
+
+
+def test_dump_flags_leave_mysql57_client_alone(monkeypatch):
+    """MySQL 5.7 has no COLUMN_STATISTICS probe and rejects the flag."""
+
+    def fake_run(cmd, **kwargs):
+        return backup_db.subprocess.CompletedProcess(
+            cmd, 0, b"mysqldump  Ver 10.13 Distrib 5.7.42, for Linux (x86_64)", b""
+        )
+
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    assert backup_db._dump_client_extra_flags("/usr/bin/mysqldump") == []
+
+
+def test_mysql_backup_includes_version_appropriate_flags(monkeypatch):
+    """The real command must carry the flag chosen for the client on PATH."""
+    captured = {}
+
+    def fake_run(cmd, env=None, capture_output=True, check=False, **kwargs):
+        if cmd[1:2] == ["--version"]:
+            return backup_db.subprocess.CompletedProcess(cmd, 0, b"mysqldump  Ver 8.0.36 (MySQL)", b"")
+        captured["cmd"] = cmd
+        _write_dump(cmd)
+        return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@dbhost:3306/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/mysqldump")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+
+    result = backup_db.create_backup(include_uploads=False)
+    try:
+        assert "--column-statistics=0" in captured["cmd"]
+    finally:
+        result.unlink(missing_ok=True)
+
+
 def test_backup_dispatches_to_mysql_when_configured(monkeypatch):
     calls = {}
 
@@ -141,6 +199,8 @@ def test_backup_dispatches_to_mysql_when_configured(monkeypatch):
         return "/usr/bin/mysqldump" if name == "mysqldump" else None
 
     def fake_run(cmd, env=None, capture_output=True, check=False):
+        if cmd[1:2] == ["--version"]:
+            return backup_db.subprocess.CompletedProcess(cmd, 0, b"mysqldump from MariaDB", b"")
         calls["cmd"] = cmd
         _write_dump(cmd)
         return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
@@ -192,7 +252,7 @@ def test_mysql_backup_raises_on_empty_dump(monkeypatch):
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/mysqldump")
 
     def fake_run(cmd, env=None, capture_output=True, check=False):
-        return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
+        return backup_db.subprocess.CompletedProcess(cmd, 0, b"mysqldump from MariaDB", b"")
 
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
 
@@ -204,6 +264,8 @@ def test_mysql_backup_passes_password_via_environment_not_argv(monkeypatch):
     captured = {}
 
     def fake_run(cmd, env=None, capture_output=True, check=False):
+        if cmd[1:2] == ["--version"]:
+            return backup_db.subprocess.CompletedProcess(cmd, 0, b"mysqldump from MariaDB", b"")
         captured["cmd"] = cmd
         captured["env"] = env
         _write_dump(cmd)

@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -111,6 +112,32 @@ def _mysql_dump_credentials(url):
     return host, port, user, password, database
 
 
+def _dump_client_extra_flags(dump_tool):
+    """Return flags needed for this mysqldump client to dump a server safely.
+
+    MySQL 8's ``mysqldump`` queries ``information_schema.COLUMN_STATISTICS``,
+    which does not exist on MariaDB, so the dump aborts with "Unknown table
+    'COLUMN_STATISTICS'" unless ``--column-statistics=0`` is passed. The
+    MariaDB client and older MySQL clients (5.7) do not accept that flag, so it
+    must only be added for an Oracle MySQL client at version 8 or newer. This
+    matters on shared hosting, where the client and server versions differ.
+    """
+    try:
+        result = subprocess.run([dump_tool, "--version"], capture_output=True, check=False)
+    except OSError:
+        return []
+    text = (result.stdout or b"").decode("utf-8", "replace")
+    lowered = text.lower()
+    if "mariadb" in lowered:
+        return []
+    # "mysqldump Ver 10.13 Distrib 5.7.42" -> server version is after "Distrib";
+    # "mysqldump Ver 8.0.36 ... (MySQL ...)" -> no Distrib, so take "Ver".
+    match = re.search(r"distrib\s+(\d+)\.", lowered) or re.search(r"ver\s+(\d+)\.", lowered)
+    if match and int(match.group(1)) >= 8:
+        return ["--column-statistics=0"]
+    return []
+
+
 def create_mysql_backup(include_uploads=True):
     """Back up a live MySQL/MariaDB database with mysqldump.
 
@@ -146,6 +173,7 @@ def create_mysql_backup(include_uploads=True):
             "--host", host,
             "--port", str(port),
             "--user", user,
+            *_dump_client_extra_flags(dump_tool),
             "--result-file", str(dump_path),
             database,
         ]
