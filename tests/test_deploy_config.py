@@ -2,6 +2,8 @@
 import pathlib
 import re
 
+import yaml
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
@@ -92,6 +94,24 @@ def test_backup_artifacts_are_gitignored():
     assert "backups/" in text
     assert "*.sql" in text
     assert "*.dump" in text
+
+
+def test_a_workflow_runs_the_unit_tests_on_every_push():
+    """The suite must be verified by CI on all commits, not just narrow paths.
+
+    deployment-smoke is path-filtered, so without an unfiltered tests workflow
+    a test-only commit produces no CI record and the pass count is unverifiable.
+    """
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+    unfiltered = []
+    for path in workflows:
+        config = yaml.safe_load(path.read_text())
+        triggers = config.get(True, config.get("on", {})) or {}
+        push = triggers.get("push")
+        # A bare `push:` (None) runs on every push; a dict means a path filter.
+        if push is None or push == {}:
+            unfiltered.append(path)
+    assert unfiltered, "no workflow runs on every push; test-only commits get no CI"
 
 
 def test_requirements_include_both_database_drivers():
