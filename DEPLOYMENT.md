@@ -26,10 +26,18 @@ Do not configure the app against more than one platform at a time.
 >
 > ```bash
 > echo "$DATABASE_URL" | sed -E 's#(://[^:]+:)[^@]+@#\1***@#'   # scheme only
-> flask --app app db check                                      # driver + schema reachable
+> flask --app app db current                                   # connects to the DB; prints the applied revision (exit 0 = reachable)
+> flask --app app db check                                     # are the models in sync with the migration head?
 > python preflight_cpanel.py                                    # config/DB/migrations/upload folder/entrypoint (read-only)
 > python preflight_cpanel.py --write-test                       # opt-in: also prove the upload folder accepts a write
 > ```
+>
+> `db current` connects and prints the applied revision, so it fails loudly on an
+> unreachable database. `db check` answers a different question — it reports
+> whether the models have drifted from the migration head and exits non-zero with
+> "Target database is not up to date" when migrations have not been applied yet,
+> which is expected on a fresh database. Do not read a `db check` failure as a
+> connectivity problem.
 >
 > The app supports MySQL/MariaDB **and** PostgreSQL: bare `mysql://` URLs are
 > normalized to `mysql+pymysql://`, `PyMySQL` is installed, and backups dispatch
@@ -150,14 +158,17 @@ Install the matching tool on the host (`pg_dump` or `mysqldump`).
 **Copy every backup off-host** to durable storage; the local `backups/`
 directory is not a real backup on its own.
 
-Restore test (run periodically, on a scratch database):
+Restore test (run periodically, on a scratch database). The client tools do
+**not** understand the SQLAlchemy driver suffix, so strip it first — a
+`mysql+pymysql://` URL passed straight to `mysql` fails to parse:
 
 ```bash
-# PostgreSQL
+# PostgreSQL (pg_restore does understand the postgresql:// scheme)
 pg_restore --clean --if-exists --dbname "$DATABASE_URL" <extracted>/database.dump
 
-# MySQL/MariaDB
-mysql "$DATABASE_URL" < <extracted>/database.sql
+# MySQL/MariaDB: strip the +pymysql driver suffix the app adds
+CLIENT_URL="${DATABASE_URL/mysql+pymysql:/mysql:}"
+mysql "$CLIENT_URL" < <extracted>/database.sql
 ```
 
 Retention in `backup_db.py` (`cleanup_old_backups`) only deletes **local**

@@ -114,6 +114,29 @@ def test_a_workflow_runs_the_unit_tests_on_every_push():
     assert unfiltered, "no workflow runs on every push; test-only commits get no CI"
 
 
+def test_deployment_restore_strips_pymysql_driver_suffix():
+    """`mysql "$DATABASE_URL"` fails because the app normalizes to +pymysql.
+
+    The client tools only accept `mysql://`, so the restore instructions must
+    strip the driver suffix before handing the URL to `mysql`.
+    """
+    text = (ROOT / "DEPLOYMENT.md").read_text()
+    assert 'mysql "$DATABASE_URL"' not in text
+    assert "CLIENT_URL" in text
+
+
+def test_deployment_uses_db_current_as_the_reachability_probe():
+    """`db check` is Alembic model-drift, not a connectivity check.
+
+    On a fresh database it exits non-zero with "Target database is not up to
+    date", so documenting it as "driver + schema reachable" misleads the
+    operator. `db current` connects and prints the applied revision.
+    """
+    text = (ROOT / "DEPLOYMENT.md").read_text()
+    assert "flask --app app db current" in text
+    assert "driver + schema reachable" not in text
+
+
 def test_requirements_include_both_database_drivers():
     text = (ROOT / "requirements.txt").read_text()
     # PostgreSQL (Railway/VPS) and MySQL/MariaDB (cPanel) must both install.
