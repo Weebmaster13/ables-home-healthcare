@@ -4,6 +4,9 @@ __pycache__/
 instance/*.db
 instance/uploads/
 instance/logs/
+backups/
+*.sql
+*.dump
 .env
 .env.local
 .env.production

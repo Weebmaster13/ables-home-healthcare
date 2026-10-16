@@ -82,6 +82,18 @@ def test_oracle_env_template_has_placeholders_only():
     assert ".env.oracle" in (ROOT / ".gitignore").read_text()
 
 
+def test_backup_artifacts_are_gitignored():
+    """Database dumps hold client/employee data and must never be committed.
+
+    ``backup_db.py`` writes into ``backups/`` and can emit ``*.sql``/``*.dump``
+    files, so both must be ignored.
+    """
+    text = (ROOT / ".gitignore").read_text()
+    assert "backups/" in text
+    assert "*.sql" in text
+    assert "*.dump" in text
+
+
 def test_requirements_include_both_database_drivers():
     text = (ROOT / "requirements.txt").read_text()
     # PostgreSQL (Railway/VPS) and MySQL/MariaDB (cPanel) must both install.
