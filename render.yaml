@@ -19,7 +19,7 @@ services:
       - key: FORCE_HTTPS
         value: "true"
       - key: AUTO_MIGRATE_ON_STARTUP
-        value: "true"
+        value: "false"
       - key: SITE_BASE_URL
         value: https://ables-home-healthcare-6.onrender.com
       - key: SECRET_KEY

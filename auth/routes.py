@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, render_template, request, redirect, se
 from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from werkzeug.security import generate_password_hash, check_password_hash
+import hashlib
 
 from models import User
 from extensions import db
@@ -175,6 +176,22 @@ def reset_serializer():
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
 
 
+def password_reset_fingerprint(user):
+    """Fingerprint the current password hash so a reset link is single-use.
+
+    Changing the password changes the hash, which invalidates any link that
+    was issued against the previous password.
+    """
+    return hashlib.sha256((user.password or "").encode("utf-8")).hexdigest()[:32]
+
+
+def make_password_reset_token(user):
+    return reset_serializer().dumps(
+        {"email": user.email, "pw": password_reset_fingerprint(user)},
+        salt="password-reset",
+    )
+
+
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     if current_user.is_authenticated:
@@ -187,7 +204,7 @@ def forgot_password():
         user = User.query.filter_by(email=email).first()
 
         if user:
-            token = reset_serializer().dumps(user.email, salt="password-reset")
+            token = make_password_reset_token(user)
             reset_url = url_for("auth.reset_password", token=token, _external=True)
             body = (
                 f"Hello {user.name},\n\n"
@@ -227,7 +244,7 @@ def reset_password(token):
         return redirect(url_for("main.dashboard"))
 
     try:
-        email = reset_serializer().loads(token, salt="password-reset", max_age=3600)
+        payload = reset_serializer().loads(token, salt="password-reset", max_age=3600)
     except SignatureExpired:
         flash("This reset link expired. Please request a new one.", "danger")
         return redirect(url_for("auth.forgot_password"))
@@ -235,7 +252,19 @@ def reset_password(token):
         flash("Invalid reset link.", "danger")
         return redirect(url_for("auth.forgot_password"))
 
+    if isinstance(payload, dict):
+        email = payload.get("email", "")
+        fingerprint = payload.get("pw", "")
+    else:
+        # Legacy tokens issued before single-use enforcement.
+        email = payload
+        fingerprint = ""
+
     user = User.query.filter_by(email=email).first_or_404()
+
+    if fingerprint and fingerprint != password_reset_fingerprint(user):
+        flash("This reset link has already been used. Please request a new one.", "danger")
+        return redirect(url_for("auth.forgot_password"))
 
     if request.method == "POST":
         password = request.form.get("password", "")

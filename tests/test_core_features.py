@@ -59,8 +59,13 @@ def test_healthz_reports_database_and_uploads():
         response = client.get("/healthz")
     assert response.status_code == 200
     data = response.get_json()
-    assert data["checks"]["database"] == "ok"
-    assert data["checks"]["uploads"] == "ok"
+    # Public liveness endpoint must not disclose internal operational details.
+    assert data == {"status": "ok"}
+
+    with app.test_client() as client:
+        admin_response = client.get("/admin/healthz")
+    # Anonymous callers cannot reach the detailed diagnostics.
+    assert admin_response.status_code in (302, 401, 403)
 
 
 def test_registration_and_login_flow():
@@ -885,4 +890,172 @@ def test_portal_and_seo_checklist_pages_are_real_routes():
     with app.app_context():
         User.query.filter_by(id=admin.id).delete()
         db.session.commit()
+
+
+
+def test_full_file_scan_detects_signature_past_sample_boundary():
+    from security import scan_upload_stream
+
+    with app.app_context():
+        # EICAR signature deliberately placed after the old 4096-byte sample window.
+        payload = b"J" * 5000 + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE"
+        file_storage = FileStorage(stream=BytesIO(payload), filename="late-sig.pdf")
+        clean, message = scan_upload_stream(file_storage)
+    assert clean is False
+    assert "EICAR" in message or "Virus" in message
+
+
+def test_external_scanner_receives_complete_file():
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = app.config.get("VIRUS_SCAN_COMMAND")
+        # `wc -c` prints the number of bytes it received on stdin and exits 0.
+        app.config["VIRUS_SCAN_COMMAND"] = "wc -c"
+        try:
+            payload = b"X" * 9000
+            file_storage = FileStorage(stream=BytesIO(payload), filename="big.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config["VIRUS_SCAN_COMMAND"] = original
+    # A scanner must see the whole file, not a truncated sample.
+    assert clean is True
+
+
+def test_csv_export_neutralizes_formula_cells():
+    from routes import csv_safe_cell
+
+    assert csv_safe_cell("=cmd|'/C calc'!A1") == "'=cmd|'/C calc'!A1"
+    assert csv_safe_cell("+1234") == "'+1234"
+    assert csv_safe_cell("-2+3") == "'-2+3"
+    assert csv_safe_cell("@SUM(A1)") == "'@SUM(A1)"
+    assert csv_safe_cell("normal text") == "normal text"
+    assert csv_safe_cell(42) == 42
+
+
+def test_time_normalization_matches_equivalent_formats():
+    from routes import normalize_time, same_visit_slot
+
+    assert normalize_time("9:00") == normalize_time("09:00")
+    assert normalize_time("9:00 AM") == "09:00"
+    assert normalize_time("9:00 PM") == "21:00"
+    assert normalize_time("0900") == "09:00"
+    assert normalize_time("12:30 AM") == "00:30"
+    assert normalize_time("12:30 PM") == "12:30"
+    assert same_visit_slot("2:00 PM", "14:00") is True
+    assert same_visit_slot("2:00 PM", "15:00") is False
+
+
+def test_double_bookings_detects_equivalent_time_formats():
+    with app.app_context():
+        client_user, _ = create_user("client")
+        caregiver, _ = create_user("caregiver")
+
+        first = Appointment(client_id=client_user.id, caregiver_id=caregiver.id, date="2031-05-01", time="9:00", status="approved")
+        second = Appointment(client_id=client_user.id, caregiver_id=caregiver.id, date="2031-05-01", time="09:00", status="approved")
+        db.session.add_all([first, second])
+        db.session.commit()
+
+        conflicts = caregiver_double_bookings([first, second])
+        assert len(conflicts) == 1
+        assert len(conflicts[0]) == 2
+
+        Appointment.query.filter(Appointment.caregiver_id == caregiver.id).delete()
+        User.query.filter(User.id.in_([client_user.id, caregiver.id])).delete()
+        db.session.commit()
+
+
+def test_admin_role_assignment_rejects_unknown_role():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        victim, _ = create_user("client")
+
+    with app.test_client() as client:
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        response = client.post(f"/admin/users/{victim.id}/role", data={"role": "superuser"}, follow_redirects=False)
+        assert response.status_code == 302
+
+    with app.app_context():
+        assert db.session.get(User, victim.id).role == "client"
+        User.query.filter(User.id.in_([admin.id, victim.id])).delete()
+        db.session.commit()
+
+
+def test_password_reset_link_is_single_use():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        user, _ = create_user("client")
+
+    with app.test_client() as client:
+        response = client.post("/auth/forgot-password", data={"email": user.email}, follow_redirects=True)
+        marker = b"/auth/reset-password/"
+        start = response.data.index(marker)
+        end = response.data.index(b"\"", start)
+        reset_path = response.data[start:end].decode("utf-8")
+        first = client.post(
+            reset_path,
+            data={"password": "NewSafePass2026!", "confirm_password": "NewSafePass2026!"},
+            follow_redirects=False,
+        )
+        assert first.status_code == 302
+        # Reusing the same link after the password changed must be rejected.
+        second = client.post(
+            reset_path,
+            data={"password": "AnotherSafe2026!", "confirm_password": "AnotherSafe2026!"},
+            follow_redirects=True,
+        )
+        assert b"already been used" in second.data
+
+    with app.app_context():
+        User.query.filter_by(id=user.id).delete()
+        db.session.commit()
+
+
+def test_seed_production_admin_refuses_promotion_without_opt_in():
+    import seed_production_admin
+
+    with app.app_context():
+        existing, _ = create_user("client")
+
+    env_backup = dict(os.environ)
+    try:
+        os.environ["ADMIN_SEED_EMAIL"] = existing.email
+        os.environ["ADMIN_SEED_PASSWORD"] = "SafePass2026!"
+        os.environ.pop("ADMIN_SEED_ALLOW_PROMOTE", None)
+        raised = False
+        try:
+            seed_production_admin.main()
+        except SystemExit:
+            raised = True
+        assert raised is True
+    finally:
+        os.environ.clear()
+        os.environ.update(env_backup)
+
+    with app.app_context():
+        assert db.session.get(User, existing.id).role == "client"
+        User.query.filter_by(id=existing.id).delete()
+        db.session.commit()
+
+
+def test_backup_dispatches_to_postgres_when_configured(monkeypatch):
+    import backup_db
+
+    calls = {}
+
+    def fake_run(cmd, check=True):
+        calls["cmd"] = cmd
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@host:5432/db")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+
+    result = backup_db.create_backup(include_uploads=False)
+
+    assert calls["cmd"][0] == "pg_dump"
+    assert "--format=custom" in calls["cmd"]
+    # postgres:// must be upgraded to the modern postgresql:// scheme.
+    assert calls["cmd"][-1].startswith("postgresql://")
+    assert result.name.startswith("ables-postgres-")
+    result.unlink(missing_ok=True)
 

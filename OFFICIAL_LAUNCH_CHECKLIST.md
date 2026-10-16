@@ -114,6 +114,11 @@ ADMIN_SEED_NAME=Office Admin
 ADMIN_SEED_PASSWORD=<strong password>
 ```
 
+The script creates the admin but refuses to silently change the role of an
+existing account. If you deliberately need to promote an existing account,
+re-run with `ADMIN_SEED_ALLOW_PROMOTE=true` after confirming the email belongs
+to the intended person. The password is never printed to stdout.
+
 Log in and change the password after first access.
 
 ## 9. Final Checks

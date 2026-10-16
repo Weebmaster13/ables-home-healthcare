@@ -128,27 +128,46 @@ def verify_admin_recovery_code(admin_user, code):
     return False
 
 
+EICAR_SIGNATURE = b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE"
+
+
+def read_full_upload(file_storage):
+    """Return the entire upload as bytes, restoring the stream position."""
+    stream = file_storage.stream
+    position = stream.tell()
+    try:
+        stream.seek(0)
+        return stream.read()
+    finally:
+        stream.seek(position)
+
+
+def contains_eicar_signature(data):
+    """Detect the EICAR signature even when it straddles a read boundary."""
+    return EICAR_SIGNATURE in data
+
+
 def scan_upload_stream(file_storage):
     if not file_storage:
         return True, "No file"
 
-    position = file_storage.stream.tell()
-    sample = file_storage.stream.read(4096)
-    file_storage.stream.seek(position)
+    contents = read_full_upload(file_storage)
 
-    if b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in sample:
+    if contains_eicar_signature(contents):
         return False, "Virus test signature detected"
 
     command = current_app.config.get("VIRUS_SCAN_COMMAND")
     if not command:
         return True, "No external scanner configured"
 
+    # The external scanner receives the complete file on stdin, not a sample,
+    # so payloads anywhere in the upload are examined.
     try:
         result = subprocess.run(
             command.split(),
-            input=sample,
+            input=contents,
             capture_output=True,
-            timeout=15,
+            timeout=30,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

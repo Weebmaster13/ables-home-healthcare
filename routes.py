@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 import csv
 import mimetypes
+import re
 from io import StringIO
 from pathlib import Path
 from uuid import uuid4
@@ -28,6 +29,7 @@ DOCUMENT_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 DOCUMENT_CATEGORIES = ["Intake", "Insurance", "Consent", "Care plan", "Medical note", "Other"]
+VALID_ROLES = {"admin", "caregiver", "client"}
 RESUME_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt"}
 RESUME_MIME_TYPES = DOCUMENT_MIME_TYPES | {"text/plain"}
 BACKUP_EXTENSIONS = {".zip", ".db"}
@@ -56,6 +58,11 @@ def get_record_or_404(model, record_id):
     if not record:
         abort(404)
     return record
+
+
+def requested_role(form, fallback):
+    role = (form.get("role", "") or "").strip().lower()
+    return role if role in VALID_ROLES else fallback
 
 
 def parse_date_filter(value, end_of_day=False):
@@ -157,11 +164,24 @@ def save_private_upload(file_storage, folder, owner_prefix, allowed_checker):
     return stored_name, original_filename
 
 
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_safe_cell(value):
+    """Neutralize spreadsheet formula injection for text cells."""
+    if isinstance(value, str) and value.startswith(CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def csv_response(filename, headers, rows):
     buffer = StringIO()
     writer = csv.writer(buffer)
     writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerows(
+        [csv_safe_cell(cell) for cell in row]
+        for row in rows
+    )
     response = make_response(buffer.getvalue())
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
@@ -212,7 +232,7 @@ def caregiver_match_details(appointment, caregiver, all_appointments):
         if item.id != appointment.id
         and item.caregiver_id == caregiver.id
         and item.date == appointment.date
-        and item.time == appointment.time
+        and same_visit_slot(item.time, appointment.time)
         and item.status not in ["completed", "cancelled", "rejected"]
     ]
     if conflicts:
@@ -284,13 +304,15 @@ def caregiver_matches_for_appointment(appointment, caregivers, all_appointments)
 
 
 def caregiver_assignment_conflicts(appointment, caregiver_id):
-    return Appointment.query.filter(
-        Appointment.id != appointment.id,
-        Appointment.caregiver_id == caregiver_id,
-        Appointment.date == appointment.date,
-        Appointment.time == appointment.time,
-        Appointment.status.notin_(["completed", "cancelled", "rejected"]),
-    ).all()
+    return [
+        item for item in Appointment.query.filter(
+            Appointment.id != appointment.id,
+            Appointment.caregiver_id == caregiver_id,
+            Appointment.date == appointment.date,
+            Appointment.status.notin_(["completed", "cancelled", "rejected"]),
+        ).all()
+        if same_visit_slot(item.time, appointment.time)
+    ]
 
 
 def appointment_date_or_none(value):
@@ -298,6 +320,33 @@ def appointment_date_or_none(value):
         return date.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+
+
+def normalize_time(value):
+    """Return a canonical HH:MM string so different renderings of the same
+    time (e.g. '9:00', '09:00', '9:00 AM', '0900') compare equal."""
+    if value is None:
+        return ""
+    text_value = str(value).strip().upper().replace(".", "")
+    if not text_value:
+        return ""
+    match = re.match(r"^(\d{1,2}):?(\d{2})?\s*(AM|PM)?$", text_value)
+    if not match:
+        return text_value
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    meridiem = match.group(3)
+    if meridiem == "PM" and hour != 12:
+        hour += 12
+    elif meridiem == "AM" and hour == 12:
+        hour = 0
+    if hour > 23 or minute > 59:
+        return text_value
+    return f"{hour:02d}:{minute:02d}"
+
+
+def same_visit_slot(left, right):
+    return normalize_time(left) == normalize_time(right)
 
 
 def active_appointment_query():
@@ -1622,15 +1671,42 @@ def terms():
 
 @main_bp.route("/healthz")
 def healthz():
+    """Minimal public liveness probe.
+
+    Returns only an overall status so that internal operational details
+    (database backend, SMTP configuration, notification counts, recipients,
+    and error text) are not exposed anonymously.
+    """
+    ok = _core_health_ok()
+    return jsonify({"status": "ok" if ok else "error"}), 200 if ok else 503
+
+
+@main_bp.route("/admin/healthz")
+@login_required
+def admin_healthz():
+    """Detailed health diagnostics for administrators only."""
+    require_role("admin")
+    return jsonify({"status": "ok" if _core_health_ok() else "error", "checks": health_detail_checks()}), 200
+
+
+def _core_health_ok():
+    checks = _core_health_checks()
+    return all(
+        checks.get(key) == "ok"
+        for key in ("database", "database_schema", "uploads")
+    )
+
+
+def _core_health_checks():
     checks = {}
     database_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
     checks["database_backend"] = "postgresql" if database_uri.startswith("postgresql") else "sqlite" if database_uri.startswith("sqlite") else "other"
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"] = "ok"
-    except Exception as exc:
+    except Exception:
         current_app.logger.exception("Health check database failure")
-        checks["database"] = f"error: {exc}"
+        checks["database"] = "error"
 
     try:
         db.session.execute(text("SELECT COUNT(*) FROM \"user\""))
@@ -1638,9 +1714,9 @@ def healthz():
         db.session.execute(text("SELECT COUNT(*) FROM caregiver_application"))
         db.session.execute(text("SELECT COUNT(*) FROM notification_log"))
         checks["database_schema"] = "ok"
-    except Exception as exc:
+    except Exception:
         current_app.logger.exception("Health check database schema failure")
-        checks["database_schema"] = f"error: {exc}"
+        checks["database_schema"] = "error"
 
     upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
     try:
@@ -1649,10 +1725,14 @@ def healthz():
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
         checks["uploads"] = "ok"
-    except Exception as exc:
+    except Exception:
         current_app.logger.exception("Health check upload folder failure")
-        checks["uploads"] = f"error: {exc}"
+        checks["uploads"] = "error"
+    return checks
 
+
+def health_detail_checks():
+    checks = _core_health_checks()
     checks["site_base_url"] = "ok" if current_app.config["SITE_BASE_URL"].startswith("https://") or current_app.config["SITE_BASE_URL"].startswith("http://127.0.0.1") else "warning"
     mail_keys = {
         "MAIL_SERVER": current_app.config.get("MAIL_SERVER"),
@@ -1680,9 +1760,7 @@ def healthz():
         current_app.logger.exception("Health check email delivery summary failure")
         checks["email_delivery"] = {"error": short_status_error(exc)}
     checks["production_mode"] = "ok" if current_app.config.get("SESSION_COOKIE_SECURE") else "development"
-
-    ok = checks["database"] == "ok" and checks["database_schema"] == "ok" and checks["uploads"] == "ok"
-    return jsonify({"status": "ok" if ok else "error", "checks": checks}), 200 if ok else 503
+    return checks
 
 
 def health_status_data():
@@ -2233,6 +2311,7 @@ def admin_system_status():
 def admin_launch_checklist():
     require_permission("admin:reports")
     health = health_status_data()
+    health_checks = health_detail_checks()
     BACKUP_DIR.mkdir(exist_ok=True)
     backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
     test_inquiries = Inquiry.query.filter(
@@ -2258,14 +2337,14 @@ def admin_launch_checklist():
         },
         {
             "label": "SMTP tested",
-            "ready": health["checks"].get("smtp") == "ok",
-            "detail": "Email settings are configured." if health["checks"].get("smtp") == "ok" else "Configure and test SMTP before launch.",
+            "ready": health_checks.get("smtp") == "ok",
+            "detail": "Email settings are configured." if health_checks.get("smtp") == "ok" else "Configure and test SMTP before launch.",
             "href": url_for("main.admin_system_status"),
         },
         {
             "label": "PostgreSQL active",
-            "ready": health["checks"].get("database_backend") == "postgresql",
-            "detail": f"Database backend: {health['checks'].get('database_backend', 'unknown')}.",
+            "ready": health_checks.get("database_backend") == "postgresql",
+            "detail": f"Database backend: {health_checks.get('database_backend', 'unknown')}.",
             "href": url_for("main.admin_system_status"),
         },
         {
@@ -2777,6 +2856,11 @@ def admin_create_user():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
 
+        requested = (request.form.get("role", "") or "").strip().lower()
+        if requested and requested not in VALID_ROLES:
+            flash("Choose a valid role: client, caregiver, or admin.", "danger")
+            return redirect(url_for("main.admin_create_user"))
+
         if User.query.filter_by(email=email).first():
             flash("A user with that email already exists.", "danger")
             return redirect(url_for("main.admin_create_user"))
@@ -2792,7 +2876,7 @@ def admin_create_user():
             email=email,
             phone=request.form.get("phone", "").strip(),
             address=request.form.get("address", "").strip(),
-            role=request.form.get("role", "client"),
+            role=requested_role(request.form, "client"),
             emergency_contact_name=request.form.get("emergency_contact_name", "").strip(),
             emergency_contact_phone=request.form.get("emergency_contact_phone", "").strip(),
             care_needs=request.form.get("care_needs", "").strip(),
@@ -2816,8 +2900,10 @@ def admin_update_user_role(user_id):
     require_role("admin")
 
     user = get_record_or_404(User, user_id)
-    user.role = request.form.get("role", user.role)
-    audit("update_user_role", "User", user.id, f"Role changed to {user.role}")
+    new_role = requested_role(request.form, user.role)
+    if new_role != user.role:
+        audit("update_user_role", "User", user.id, f"Role changed from {user.role} to {new_role}")
+        user.role = new_role
     db.session.commit()
 
     flash("User role updated.", "success")
@@ -3128,7 +3214,7 @@ def admin_edit_user(user_id):
         account.email = request.form.get("email", "").strip().lower()
         account.phone = request.form.get("phone", "").strip()
         account.address = request.form.get("address", "").strip()
-        account.role = request.form.get("role", account.role)
+        account.role = requested_role(request.form, account.role)
         account.emergency_contact_name = request.form.get("emergency_contact_name", "").strip()
         account.emergency_contact_phone = request.form.get("emergency_contact_phone", "").strip()
         account.care_needs = request.form.get("care_needs", "").strip()
@@ -3622,7 +3708,7 @@ def caregiver_double_bookings(appointments):
     for appointment in appointments:
         if not appointment.caregiver_id or appointment.status in ["completed", "cancelled", "rejected"]:
             continue
-        key = (appointment.caregiver_id, appointment.date, appointment.time)
+        key = (appointment.caregiver_id, appointment.date, normalize_time(appointment.time))
         grouped.setdefault(key, []).append(appointment)
     return [items for items in grouped.values() if len(items) > 1]
 
