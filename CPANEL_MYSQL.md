@@ -106,8 +106,10 @@ uploads, logs) — the server creates its own. No other uploads needed.
    log for "Listening at". Do NOT submit forms or log in yet.
    Before that, run the read-only preflight from the app root
    (`python preflight_cpanel.py` with the same env exported): it checks
-   config, DB reachability, migration status, upload writability, and the
-   Passenger entrypoint without migrating, seeding, or sending anything.
+   config, DB reachability, migration status, the upload folder, and the
+   Passenger entrypoint without migrating, seeding, creating folders/files, or
+   sending anything. Add `--write-test` only if you want it to also prove the
+   upload folder accepts a write (it creates and removes one probe file).
 7. Separately approved steps ONLY: `flask --app app db upgrade`, admin
    seeding, then full verification (form POST, login, upload, email).
    Cut over DNS only on explicit approval (rollback = restore old DNS).

@@ -56,7 +56,9 @@ def configure_logging(app):
     """Log to stdout/stderr (captured by container platforms) plus a local file.
 
     Local rotating files are not durable in ephemeral containers, so the
-    stream handler is what platform log aggregation actually collects.
+    stream handler is what platform log aggregation actually collects. The
+    local file is skipped entirely when ``LOG_TO_FILE`` is false, so a
+    read-only preflight does not create any files.
     """
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -65,15 +67,16 @@ def configure_logging(app):
     stream_handler.setFormatter(formatter)
     app.logger.addHandler(stream_handler)
 
-    try:
-        log_dir = Path(app.instance_path) / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(log_dir / "app.log", maxBytes=1_000_000, backupCount=5)
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(formatter)
-        app.logger.addHandler(file_handler)
-    except OSError:
-        app.logger.warning("Local log file unavailable; continuing with stream logging only.")
+    if app.config.get("LOG_TO_FILE", True):
+        try:
+            log_dir = Path(app.instance_path) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(log_dir / "app.log", maxBytes=1_000_000, backupCount=5)
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(formatter)
+            app.logger.addHandler(file_handler)
+        except OSError:
+            app.logger.warning("Local log file unavailable; continuing with stream logging only.")
 
     app.logger.setLevel(logging.INFO)
 

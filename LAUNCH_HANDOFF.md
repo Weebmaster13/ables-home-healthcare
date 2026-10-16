@@ -64,7 +64,8 @@ Confirm the live engine on the host before trusting any backup, then run the
 read-only preflight and migrations:
 
 ```bash
-python preflight_cpanel.py            # config/DB/migrations/uploads/entrypoint, no writes
+python preflight_cpanel.py            # config/DB/migrations/upload folder/entrypoint, no writes
+python preflight_cpanel.py --write-test  # opt-in: also prove the upload folder accepts writes
 flask --app app db upgrade            # run once, as an approved step
 python deploy_check.py --production
 ```

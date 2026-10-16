@@ -21,7 +21,7 @@ Prepared deployment files:
 
 - `passenger_wsgi.py` (cPanel startup file; entry point `application`)
 - `requirements-cpanel.txt` (minimal cPanel runtime set)
-- `preflight_cpanel.py` (read-only config/DB/entrypoint check)
+- `preflight_cpanel.py` (read-only config/DB/upload-folder/entrypoint check; `--write-test` opts in to a probe write)
 - `flask --app app db upgrade` (run once as an explicit deploy step)
 - `/healthz` minimal liveness check
 

@@ -33,8 +33,10 @@ security fix in `tests/test_core_features.py`.
   Install the minimal `requirements-cpanel.txt` (no gunicorn/psycopg2 needed).
   Step-by-step runbook: `CPANEL_MYSQL.md`; authoritative guide: `DEPLOYMENT.md`.
 - `preflight_cpanel.py` is a read-only pre-deploy check (config, DB reachability,
-  migration status, upload writability, Passenger entrypoint). Run it before
-  any migration/seed; it never writes, migrates, seeds, or sends mail.
+  migration status, upload folder, Passenger entrypoint). Run it before any
+  migration/seed; by default it never writes, migrates, seeds, or sends mail and
+  it does not create the upload folder or log directory. Pass `--write-test` to
+  opt in to a single create-and-remove probe file when preparing a deploy.
 - Superseded drafts to ignore unless the owner decides otherwise:
   `GODADDY_VPS_DEPLOY.md` (Docker + Nginx + PostgreSQL), `RAILWAY_DEPLOY.md`,
   `DEPLOY_RENDER_FREE.md`. Do not configure more than one platform at a time.

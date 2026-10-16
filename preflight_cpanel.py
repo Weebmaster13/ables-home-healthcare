@@ -2,8 +2,13 @@
 """Read-only preflight check for the cPanel deployment.
 
 Verifies configuration, database connectivity, migration status, upload
-writability, and the Passenger entrypoint WITHOUT migrating, seeding,
-deleting, sending mail, or touching production data.
+folder, and the Passenger entrypoint WITHOUT migrating, seeding, deleting,
+sending mail, creating directories/files, or touching production data.
+
+By default nothing is written anywhere. Pass ``--write-test`` to additionally
+prove the upload folder accepts a write by creating and removing a temporary
+probe file — use that only during deployment preparation, not as a routine
+read-only check.
 
 Exit 0 = safe to proceed to the separately-approved migration step.
 Exit 1 = fix the reported FAIL items first.
@@ -11,6 +16,7 @@ Exit 1 = fix the reported FAIL items first.
 Secrets are never printed: only presence, lengths, and masked URLs appear.
 """
 
+import argparse
 import os
 import re
 import sys
@@ -35,7 +41,18 @@ def mask_url(url):
     return shown
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Read-only cPanel preflight. Nothing is written unless --write-test is passed."
+    )
+    parser.add_argument(
+        "--write-test",
+        action="store_true",
+        help="Additionally create and remove a temporary probe file in the upload folder "
+             "(opt-in; use during deployment preparation, not as a routine read-only check).",
+    )
+    args = parser.parse_args(argv)
+
     results = []  # (level, message); level in PASS/WARN/FAIL
 
     # 1. Interpreter
@@ -68,6 +85,10 @@ def main():
         results.append(("PASS", f"DATABASE_URL configured: {mask_url(db_url)}"))
 
     # 4. Boot the app (no migrations run unless AUTO_MIGRATE_ON_STARTUP=true)
+    # Force stream-only logging so this read-only check never creates a log
+    # directory or file, even if .env sets LOG_TO_FILE=true. The app's own
+    # logging config is unaffected elsewhere.
+    os.environ["LOG_TO_FILE"] = "false"
     try:
         from app import app
         from extensions import db
@@ -102,16 +123,26 @@ def main():
     except Exception:
         results.append(("WARN", "Migration version unreadable (fresh database?) — run the approved migrate step."))
 
-    # 7. Upload folder writable (probe file created + removed, like /healthz)
-    try:
-        folder = Path(app.config["UPLOAD_FOLDER"])
-        folder.mkdir(parents=True, exist_ok=True)
-        probe = folder / ".preflight"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink(missing_ok=True)
-        results.append(("PASS", f"Upload folder writable: {folder}"))
-    except Exception as exc:
-        results.append(("FAIL", f"Upload folder not writable: {type(exc).__name__}"))
+    # 7. Upload folder. Read-only by default: existence, directory type, and
+    # effective write permission are inspected without creating anything. The
+    # actual write is only attempted when --write-test is passed.
+    folder = Path(app.config["UPLOAD_FOLDER"])
+    if not folder.exists():
+        results.append(("FAIL", f"Upload folder does not exist: {folder} (create it as the deploy step)."))
+    elif not folder.is_dir():
+        results.append(("FAIL", f"Upload folder is not a directory: {folder}"))
+    elif not os.access(folder, os.W_OK | os.X_OK):
+        results.append(("FAIL", f"Upload folder is not writable by this user: {folder}"))
+    elif args.write_test:
+        try:
+            probe = folder / ".preflight"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            results.append(("PASS", f"Upload folder write test passed: {folder}"))
+        except Exception as exc:
+            results.append(("FAIL", f"Upload folder write test failed: {type(exc).__name__}"))
+    else:
+        results.append(("PASS", f"Upload folder present and writable: {folder} (no write performed; pass --write-test to confirm)."))
 
     # 8. Passenger entrypoint
     try:

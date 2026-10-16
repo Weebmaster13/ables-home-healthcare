@@ -89,6 +89,9 @@ class Config:
     # Migrations run via an explicit deploy step (preDeployCommand / CLI) so a
     # single, deliberate strategy applies rather than multiple triggers.
     AUTO_MIGRATE_ON_STARTUP = env_bool("AUTO_MIGRATE_ON_STARTUP", False)
+    # Stream logging (stdout/stderr) is always on. The local rotating file is
+    # optional: set LOG_TO_FILE=false for read-only checks or ephemeral hosts.
+    LOG_TO_FILE = env_bool("LOG_TO_FILE", True)
     REMEMBER_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_HTTPONLY = True

@@ -27,7 +27,8 @@ Do not configure the app against more than one platform at a time.
 > ```bash
 > echo "$DATABASE_URL" | sed -E 's#(://[^:]+:)[^@]+@#\1***@#'   # scheme only
 > flask --app app db check                                      # driver + schema reachable
-> python preflight_cpanel.py                                    # config/DB/migrations/uploads/entrypoint
+> python preflight_cpanel.py                                    # config/DB/migrations/upload folder/entrypoint (read-only)
+> python preflight_cpanel.py --write-test                       # opt-in: also prove the upload folder accepts a write
 > ```
 >
 > The app supports MySQL/MariaDB **and** PostgreSQL: bare `mysql://` URLs are
@@ -41,6 +42,9 @@ Migrations run **once, as an explicit deploy step**, never automatically on
 app startup:
 
 - `AUTO_MIGRATE_ON_STARTUP` defaults to **false**. Leave it false.
+- `LOG_TO_FILE` defaults to **true** (stream logging is always on). Set it to
+  `false` on ephemeral hosts, or when running the read-only preflight, so no
+  local `instance/logs/app.log` is created.
 - Run migrations from the deploy pipeline or a shell:
 
 ```bash
