@@ -114,6 +114,22 @@ def test_a_workflow_runs_the_unit_tests_on_every_push():
     assert unfiltered, "no workflow runs on every push; test-only commits get no CI"
 
 
+def test_ci_runs_the_live_backup_restore_drill():
+    """The live drill must run in CI, not only on a developer machine.
+
+    Without MYSQL_TEST_URL the round-trip test skips, so the workflow needs a
+    real MariaDB service and that variable set, or the documented restore drill
+    is never actually executed by CI.
+    """
+    config = yaml.safe_load((ROOT / ".github" / "workflows" / "tests.yml").read_text())
+    jobs = config["jobs"]
+    live = [name for name, job in jobs.items() if "services" in job]
+    assert live, "no CI job provides a database service for the live drill"
+    for name in live:
+        envs = [step.get("env", {}) for step in jobs[name]["steps"]]
+        assert any("MYSQL_TEST_URL" in env for env in envs), name
+
+
 def test_deployment_restore_uses_the_tested_client_url_helper():
     """The restore snippet must use the tested helper, not an inline shell hack.
 
