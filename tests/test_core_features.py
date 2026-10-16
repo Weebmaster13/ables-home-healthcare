@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from io import BytesIO
 import os
+from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -1525,5 +1526,110 @@ def test_normalize_date_canonicalizes_common_formats():
     assert normalize_date("") == ""
     # Unrecognized text is preserved rather than silently dropped.
     assert normalize_date("next week") == "next week"
+
+
+def test_client_cannot_download_another_clients_document():
+    """Cross-account document access must be denied (owner_id is enforced).
+
+    A real file is written so the owner's own download returns 200; that proves
+    the intruder's denial comes from the authorization check and not merely from
+    a missing file on disk.
+    """
+    app.config["WTF_CSRF_ENABLED"] = False
+    upload_dir = Path(app.config["UPLOAD_FOLDER"]) / "documents"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"private-{uuid.uuid4().hex}.pdf"
+    (upload_dir / stored_name).write_bytes(b"%PDF-1.4 owner private document")
+    try:
+        with app.app_context():
+            owner, owner_password = create_user("client")
+            intruder, intruder_password = create_user("client")
+            document = ClientDocument(
+                owner_id=owner.id,
+                uploaded_by_id=owner.id,
+                title="Owner Private File",
+                category="Intake",
+                filename=stored_name,
+                original_filename="private.pdf",
+            )
+            db.session.add(document)
+            db.session.commit()
+            document_id = document.id
+
+        with app.test_client() as client:
+            assert login(client, owner, owner_password).status_code == 302
+            owner_response = client.get(f"/documents/{document_id}/download")
+        assert owner_response.status_code == 200
+
+        with app.test_client() as client:
+            assert login(client, intruder, intruder_password).status_code == 302
+            response = client.get(f"/documents/{document_id}/download")
+        # Denied before any file is served (403), or not found; never 200.
+        assert response.status_code in (403, 404)
+    finally:
+        (upload_dir / stored_name).unlink(missing_ok=True)
+
+
+def test_deactivating_an_account_invalidates_its_existing_session():
+    """A disabled user must not keep using a session established earlier."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        user, password = create_user("client")
+
+    with app.test_client() as client:
+        assert login(client, user, password).status_code == 302
+        assert client.get("/dashboard").status_code == 200
+
+        with app.app_context():
+            account = db.session.get(User, user.id)
+            account.is_active_account = False
+            db.session.commit()
+
+        after = client.get("/dashboard")
+    # The stale session must no longer reach an authenticated page.
+    assert after.status_code in (302, 401, 403)
+    if after.status_code == 302:
+        assert "/auth/login" in after.headers.get("Location", "")
+
+
+def test_anonymous_cannot_download_a_document():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        owner, _ = create_user("client")
+        document = ClientDocument(
+            owner_id=owner.id,
+            uploaded_by_id=owner.id,
+            title="Anonymous Probe",
+            category="Intake",
+            filename="probe.pdf",
+            original_filename="probe.pdf",
+        )
+        db.session.add(document)
+        db.session.commit()
+        document_id = document.id
+
+    with app.test_client() as client:
+        response = client.get(f"/documents/{document_id}/download")
+    assert response.status_code in (302, 401, 403)
+
+
+def test_role_changes_are_restricted_to_the_allowlist():
+    """A crafted role value must not grant admin; it falls back safely."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        target, _ = create_user("client")
+
+    with app.test_client() as client:
+        client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]})
+        response = client.post(
+            f"/admin/users/{target.id}/role",
+            data={"role": "superadmin"},
+            follow_redirects=False,
+        )
+    assert response.status_code in (200, 302)
+    with app.app_context():
+        assert db.session.get(User, target.id).role != "superadmin"
+
 
 
