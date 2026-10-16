@@ -52,7 +52,9 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(BASE_DIR, "instance", "uploads"))
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(5 * 1024 * 1024)))
     PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)
-    AUTO_MIGRATE_ON_STARTUP = env_bool("AUTO_MIGRATE_ON_STARTUP", env_bool("RENDER"))
+    # Migrations run via an explicit deploy step (preDeployCommand / CLI) so a
+    # single, deliberate strategy applies rather than multiple triggers.
+    AUTO_MIGRATE_ON_STARTUP = env_bool("AUTO_MIGRATE_ON_STARTUP", False)
     REMEMBER_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_HTTPONLY = True
@@ -63,7 +65,11 @@ class Config:
     FORCE_HTTPS = env_bool("FORCE_HTTPS", PRODUCTION_ENVIRONMENT)
     ACCOUNT_LOCKOUT_ATTEMPTS = int(os.environ.get("ACCOUNT_LOCKOUT_ATTEMPTS", "5"))
     ACCOUNT_LOCKOUT_MINUTES = int(os.environ.get("ACCOUNT_LOCKOUT_MINUTES", "15"))
-    ADMIN_RECOVERY_CODES_REQUIRED = env_bool("ADMIN_RECOVERY_CODES_REQUIRED", False)
+    # Recovery-code enforcement defaults on in production; dev stays lenient.
+    ADMIN_RECOVERY_CODES_REQUIRED = env_bool("ADMIN_RECOVERY_CODES_REQUIRED", PRODUCTION_ENVIRONMENT)
+    # Breached-password (Have I Been Pwned) check. Fail-open on network errors;
+    # disable only if outbound network calls are not acceptable.
+    PASSWORD_BREACH_CHECK_ENABLED = env_bool("PASSWORD_BREACH_CHECK_ENABLED", True)
 
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))

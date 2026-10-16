@@ -205,6 +205,14 @@ class NotificationLog(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class LoginAttempt(db.Model):
+    """Persistent login-throttle state shared across workers/restarts."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(120), nullable=False, index=True)
+    attempted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class PortalMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)

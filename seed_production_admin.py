@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash
 
 from app import app
 from extensions import db
-from models import User
+from models import AuditLog, User
 
 
 def main():
@@ -41,8 +41,16 @@ def main():
                 raise SystemExit(1)
             existing.role = "admin"
             existing.is_active_account = True
-            existing.password = generate_password_hash(password)
-            print(f"Promoted existing account to admin: {email}")
+            db.session.add(
+                AuditLog(
+                    user_id=None,
+                    action="seed_promote_admin",
+                    entity_type="User",
+                    entity_id=existing.id,
+                    details=f"seed_production_admin promoted {email} to admin (existing password preserved)",
+                )
+            )
+            print(f"Promoted existing account to admin: {email} (existing password preserved)")
         else:
             db.session.add(
                 User(

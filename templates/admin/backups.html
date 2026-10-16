@@ -5,13 +5,13 @@
 <div class="page-hero simple-hero">
     <span class="eyebrow">Admin backups</span>
     <h1>Production backups</h1>
-    <p>Create local app backups and verify the live PostgreSQL host backup plan before launch.</p>
+    <p>Create a PostgreSQL or SQLite backup, bundle uploads, and verify the archive. Keep an off-host copy.</p>
 </div>
 
 <section class="portal-help-strip compact mb-4">
     <div>
         <strong>Backup now</strong>
-        <span>This page backs up the app files/uploads that exist on this server. For Render PostgreSQL, also enable and verify Render-managed database backups from the Render database page.</span>
+        <span>This runs <code>pg_dump</code> against the live PostgreSQL database when <code>DATABASE_URL</code> points at PostgreSQL, bundles uploaded files, and verifies the result. On a local SQLite database it copies the SQLite file instead. Copy every backup off-host to durable storage &mdash; the local <code>backups/</code> folder is not a real backup on its own.</span>
     </div>
     <form method="POST" action="/admin/backups/create">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -28,10 +28,10 @@
     <span class="eyebrow">Launch checklist</span>
     <h2 class="h4">Backup policy before real client use</h2>
     <ul class="check-list">
-        <li>Confirm Render PostgreSQL automated backups or scheduled snapshots are enabled.</li>
-        <li>Create a test backup and confirm an admin can download it.</li>
-        <li>Decide where uploaded documents will be stored long term, such as Render disk, S3, Backblaze B2, or another approved storage service.</li>
-        <li>Write down who checks backups weekly and how long old backups are kept.</li>
+        <li>Create a test backup, download it, and restore it into a throwaway database to prove recovery works.</li>
+        <li>Automate the backup (cron) and copy each archive off-host to durable, access-controlled storage.</li>
+        <li>Confirm who checks backups weekly and how long old backups are kept.</li>
+        <li>Store uploaded documents on persistent storage, not an ephemeral container path such as <code>/tmp</code>.</li>
         <li>Do not store backup files on a public computer or share them through personal email.</li>
     </ul>
 </section>

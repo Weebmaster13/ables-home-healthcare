@@ -18,7 +18,10 @@
             <p class="home-hero-trust">Call <a href="tel:+13014553030">301-455-3030</a> · Fax 301-326-2270</p>
         </div>
         <div class="home-hero-media">
-            <img src="{{ url_for('static', filename='img/care/hero-family-room-v2.png') }}" alt="A caregiver talking with an older adult and a family member in a bright living room" fetchpriority="high" decoding="async">
+            <picture>
+                <source srcset="{{ url_for('static', filename='img/care/hero-family-room-v2.webp') }}" type="image/webp">
+                <img src="{{ url_for('static', filename='img/care/hero-family-room-v2.jpg') }}" alt="A caregiver talking with an older adult and a family member in a bright living room" width="1400" height="788" fetchpriority="high" decoding="async">
+            </picture>
         </div>
     </div>
     <nav class="path-bar" aria-label="Popular next steps">
@@ -74,19 +77,31 @@
 <section class="home-image-story" aria-label="Care at home">
     <div class="home-image-grid">
         <figure>
-            <img src="{{ url_for('static', filename='img/care/hero-family-room-v2.png') }}" alt="Caregiver speaking with a client and family member at home" loading="lazy" decoding="async">
+            <picture>
+                <source srcset="{{ url_for('static', filename='img/care/hero-family-room-v2.webp') }}" type="image/webp">
+                <img src="{{ url_for('static', filename='img/care/hero-family-room-v2.jpg') }}" alt="Caregiver speaking with a client and family member at home" width="1400" height="788" loading="lazy" decoding="async">
+            </picture>
             <figcaption>Family conversation</figcaption>
         </figure>
         <figure>
-            <img src="{{ url_for('static', filename='img/care/hero-consultation-v2.png') }}" alt="Home care consultation at a kitchen table" loading="lazy" decoding="async">
+            <picture>
+                <source srcset="{{ url_for('static', filename='img/care/hero-consultation-v2.webp') }}" type="image/webp">
+                <img src="{{ url_for('static', filename='img/care/hero-consultation-v2.jpg') }}" alt="Home care consultation at a kitchen table" width="1400" height="788" loading="lazy" decoding="async">
+            </picture>
             <figcaption>Free consultation</figcaption>
         </figure>
         <figure>
-            <img src="{{ url_for('static', filename='img/care/hero-care-standards-v2.png') }}" alt="Caregiver assisting an older adult safely at home" loading="lazy" decoding="async">
+            <picture>
+                <source srcset="{{ url_for('static', filename='img/care/hero-care-standards-v2.webp') }}" type="image/webp">
+                <img src="{{ url_for('static', filename='img/care/hero-care-standards-v2.jpg') }}" alt="Caregiver assisting an older adult safely at home" width="1400" height="788" loading="lazy" decoding="async">
+            </picture>
             <figcaption>Respectful support</figcaption>
         </figure>
         <figure>
-            <img src="{{ url_for('static', filename='img/care/home-services-v2.png') }}" alt="Caregiver reviewing daily routine notes with a client" loading="lazy" decoding="async">
+            <picture>
+                <source srcset="{{ url_for('static', filename='img/care/home-services-v2.webp') }}" type="image/webp">
+                <img src="{{ url_for('static', filename='img/care/home-services-v2.jpg') }}" alt="Caregiver reviewing daily routine notes with a client" width="1400" height="788" loading="lazy" decoding="async">
+            </picture>
             <figcaption>Care plan notes</figcaption>
         </figure>
     </div>

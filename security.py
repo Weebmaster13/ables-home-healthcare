@@ -9,12 +9,16 @@ from flask_login import current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
-from models import AdminRecoveryCode, AuditLog
+from models import AdminRecoveryCode, AuditLog, LoginAttempt
 
 
 LOGIN_ATTEMPTS = defaultdict(list)
 LOGIN_LIMIT = 5
 LOGIN_WINDOW = timedelta(minutes=10)
+# Public forms share the persistent LoginAttempt store under a namespaced key so
+# bot floods are throttled across workers instead of per-process.
+PUBLIC_FORM_WINDOW = timedelta(minutes=10)
+PUBLIC_FORM_LIMIT = 8
 ROLE_PERMISSIONS = {
     "admin": {
         "admin:access",
@@ -58,6 +62,39 @@ def require_permission(permission):
 
 def password_is_strong(password):
     return len(password_feedback(password)["missing"]) == 0
+
+
+def password_is_breached(password):
+    """Check the password against the Have I Been Pwned range API.
+
+    Uses k-anonymity: only the first 5 characters of the SHA-1 hash leave the
+    server. Returns False (fail-open) if the network check cannot run, so a
+    third-party outage never blocks account creation.
+    """
+    import hashlib
+    from urllib.error import URLError
+    from urllib.request import Request as UrlRequest, urlopen
+
+    if not password:
+        return False
+
+    if not current_app.config.get("PASSWORD_BREACH_CHECK_ENABLED", True):
+        return False
+
+    digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+    prefix, suffix = digest[:5], digest[5:]
+
+    try:
+        request = UrlRequest(
+            f"https://api.pwnedpasswords.com/range/{prefix}",
+            headers={"User-Agent": "ables-home-healthcare-password-check"},
+        )
+        with urlopen(request, timeout=3) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except (URLError, OSError, ValueError):
+        return False
+
+    return any(line.split(":", 1)[0].strip() == suffix for line in body.splitlines())
 
 
 def password_feedback(password):
@@ -142,6 +179,17 @@ def read_full_upload(file_storage):
         stream.seek(position)
 
 
+def read_upload_head(file_storage, size=4096):
+    """Return the leading bytes of the upload, restoring the stream position."""
+    stream = file_storage.stream
+    position = stream.tell()
+    try:
+        stream.seek(0)
+        return stream.read(size)
+    finally:
+        stream.seek(position)
+
+
 def contains_eicar_signature(data):
     """Detect the EICAR signature even when it straddles a read boundary."""
     return EICAR_SIGNATURE in data
@@ -183,19 +231,58 @@ def rate_limit_key():
     return request.remote_addr or "unknown"
 
 
+def _recent_attempts(key, now, window):
+    """Return recent attempts from the shared store, falling back to memory."""
+    cutoff = now - window
+    try:
+        LoginAttempt.query.filter(LoginAttempt.attempted_at < now - LOGIN_WINDOW).delete()
+        db.session.commit()
+        return LoginAttempt.query.filter(
+            LoginAttempt.key == key,
+            LoginAttempt.attempted_at >= cutoff,
+        ).count()
+    except Exception:
+        db.session.rollback()
+        LOGIN_ATTEMPTS[key] = [item for item in LOGIN_ATTEMPTS[key] if now - item < window]
+        return len(LOGIN_ATTEMPTS[key])
+
+
 def login_is_limited():
     key = rate_limit_key()
     now = datetime.now(timezone.utc)
-    LOGIN_ATTEMPTS[key] = [item for item in LOGIN_ATTEMPTS[key] if now - item < LOGIN_WINDOW]
-    return len(LOGIN_ATTEMPTS[key]) >= LOGIN_LIMIT
+    return _recent_attempts(key, now, LOGIN_WINDOW) >= LOGIN_LIMIT
 
 
 def record_login_failure():
-    LOGIN_ATTEMPTS[rate_limit_key()].append(datetime.now(timezone.utc))
+    key = rate_limit_key()
+    try:
+        db.session.add(LoginAttempt(key=key))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        LOGIN_ATTEMPTS[key].append(datetime.now(timezone.utc))
 
 
 def clear_login_failures():
-    LOGIN_ATTEMPTS.pop(rate_limit_key(), None)
+    key = rate_limit_key()
+    LOGIN_ATTEMPTS.pop(key, None)
+    try:
+        LoginAttempt.query.filter_by(key=key).delete()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def password_fingerprint(user):
+    """Stable, non-secret fingerprint of a user's current password hash.
+
+    Stored in the session so a password change can invalidate old sessions
+    without keeping the hash itself in the cookie.
+    """
+    import hashlib
+
+    password_hash = getattr(user, "password", "") or ""
+    return hashlib.sha256(password_hash.encode("utf-8")).hexdigest()[:32]
 
 
 def utc_now():
@@ -234,6 +321,75 @@ def record_user_login_failure(user):
         lockout_minutes = current_app.config.get("ACCOUNT_LOCKOUT_MINUTES", 15)
         user.locked_until = utc_now() + timedelta(minutes=lockout_minutes)
         audit("account_locked", "User", user.id, f"Locked after {user.failed_login_count} failed attempts")
+
+
+def public_form_is_limited(scope):
+    """Throttle repeated public form submissions from one client.
+
+    Uses the shared LoginAttempt store under a ``form:<scope>:`` key so the
+    limit survives restarts and is shared across Gunicorn workers. Call this
+    *after* a successful validation so typos do not consume the allowance.
+    """
+    key = f"form:{scope}:{rate_limit_key()}"
+    now = datetime.now(timezone.utc)
+    cutoff = now - PUBLIC_FORM_WINDOW
+    try:
+        LoginAttempt.query.filter(LoginAttempt.attempted_at < cutoff).delete(synchronize_session=False)
+        db.session.commit()
+        recent = LoginAttempt.query.filter(
+            LoginAttempt.key == key,
+            LoginAttempt.attempted_at >= cutoff,
+        ).count()
+        if recent >= PUBLIC_FORM_LIMIT:
+            return True
+        db.session.add(LoginAttempt(key=key))
+        db.session.commit()
+        return False
+    except Exception:
+        db.session.rollback()
+        LOGIN_ATTEMPTS[key] = [item for item in LOGIN_ATTEMPTS[key] if now - item < PUBLIC_FORM_WINDOW]
+        if len(LOGIN_ATTEMPTS[key]) >= PUBLIC_FORM_LIMIT:
+            return True
+        LOGIN_ATTEMPTS[key].append(now)
+        return False
+
+
+def looks_like_spam(*values):
+    """Cheap heuristic for obvious bot submissions (links, injected scripts).
+
+    Returns True when the combined text contains URLs, BBCode/HTML link markup,
+    or script tags. Human messages that merely mention a website are uncommon on
+    these intake forms, so a false positive is preferable to unbounded spam.
+    """
+    text = " ".join(str(value or "") for value in values)
+    lowered = text.lower()
+    if "<script" in lowered or "javascript:" in lowered or "[url=" in lowered:
+        return True
+    return bool(re.search(r"https?://|www\.[a-z0-9-]+\.[a-z]{2,}", lowered))
+
+
+def honeypot_triggered():
+    """Return True when the hidden field bots fill in is present and non-empty."""
+    return bool(request.form.get("website", "").strip())
+
+
+def reject_public_submission(scope, redirect_endpoint, *fields):
+    """Shared gate for public forms.
+
+    Returns a redirect response when the submission is clearly abusive, or
+    ``None`` when the caller should proceed. Records an audit entry on block.
+    """
+    from flask import flash, redirect, url_for
+
+    if honeypot_triggered() or looks_like_spam(*fields) or public_form_is_limited(scope):
+        audit("public_form_blocked", "PublicForm", None, f"scope={scope}")
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        flash("We could not process that submission. Please try again or call the office.", "danger")
+        return redirect(url_for(redirect_endpoint))
+    return None
 
 
 def clear_user_login_failures(user):

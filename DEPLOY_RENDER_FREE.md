@@ -1,3 +1,5 @@
+> **Superseded:** see [DEPLOYMENT.md](DEPLOYMENT.md) for the authoritative deployment guide.
+
 # Deploy Ables Home Healthcare (free) + connect ableshomehealthcare.com
 
 > Do NOT touch GoDaddy DNS until the Render deployment is tested and the

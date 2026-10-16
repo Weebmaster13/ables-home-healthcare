@@ -12,7 +12,7 @@ Entry points: `wsgi.py` (production, adds proxy-header handling) and
 ## Run tests
 
 ```bash
-python -m pytest -q          # 58 tests, must stay green
+python -m pytest -q          # 71 tests, must stay green
 ```
 
 Tests use a temp SQLite DB (see `tests/conftest.py`) and disable CSRF, so many

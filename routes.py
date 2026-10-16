@@ -10,12 +10,12 @@ from flask import Blueprint, abort, current_app, jsonify, make_response, render_
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
-from sqlalchemy import or_, text
+from sqlalchemy import and_, or_, text, true
 
 from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
-from security import audit, generate_recovery_codes, password_feedback, password_is_strong, require_permission, require_role, scan_upload_stream
+from security import audit, generate_recovery_codes, password_feedback, password_is_breached, password_is_strong, read_upload_head, reject_public_submission, require_permission, require_role, scan_upload_stream
 from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup
 
 # ---------------- MAIN BLUEPRINT ----------------
@@ -53,6 +53,32 @@ def allowed_mime(filename, allowed_types, allowed_prefixes=None):
     return guessed_type in allowed_types or any(guessed_type.startswith(prefix) for prefix in allowed_prefixes)
 
 
+# Magic-byte signatures for the file types this app accepts. Content that does
+# not match its claimed extension is rejected, so a renamed executable is not
+# treated as a PDF just because it ends in .pdf.
+FILE_SIGNATURES = {
+    ".pdf": (b"%PDF-",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    ".docx": (b"PK\x03\x04",),
+    ".txt": (),
+}
+# A txt file has no signature; treat anything without control bytes as text.
+
+
+def content_matches_extension(filename, head):
+    """Return True when the leading bytes match the file's extension."""
+    extension = Path(filename).suffix.lower()
+    signatures = FILE_SIGNATURES.get(extension)
+    if signatures is None:
+        return False
+    if extension == ".txt":
+        return b"\x00" not in head
+    return any(head.startswith(signature) for signature in signatures)
+
+
 def get_record_or_404(model, record_id):
     record = db.session.get(model, record_id)
     if not record:
@@ -63,6 +89,13 @@ def get_record_or_404(model, record_id):
 def requested_role(form, fallback):
     role = (form.get("role", "") or "").strip().lower()
     return role if role in VALID_ROLES else fallback
+
+
+def active_admin_count(exclude_user_id=None):
+    query = User.query.filter_by(role="admin", is_active_account=True)
+    if exclude_user_id is not None:
+        query = query.filter(User.id != exclude_user_id)
+    return query.count()
 
 
 def parse_date_filter(value, end_of_day=False):
@@ -186,6 +219,12 @@ def save_private_upload(file_storage, folder, owner_prefix, allowed_checker):
     if not clean:
         current_app.logger.warning("Upload rejected by scan: %s", scan_message)
         audit("reject_upload_scan", "Upload", None, f"{original_filename}: {scan_message}")
+        return "", original_filename
+
+    head = read_upload_head(file_storage)
+    if not content_matches_extension(original_filename, head):
+        current_app.logger.warning("Upload rejected: content does not match extension: %s", original_filename)
+        audit("reject_upload_type", "Upload", None, f"{original_filename}: content/extension mismatch")
         return "", original_filename
 
     extension = Path(original_filename).suffix.lower()
@@ -352,6 +391,35 @@ def appointment_date_or_none(value):
         return date.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+
+
+def normalize_date(value):
+    """Return an ISO ``YYYY-MM-DD`` string when the input is a recognizable date.
+
+    Storing every appointment date in one canonical format keeps conflict
+    detection reliable: ``03/01/2026`` and ``2026-03-01`` must compare equal
+    instead of silently missing a double-booking. Unrecognized values are
+    returned unchanged so no data is silently discarded.
+    """
+    if value is None:
+        return ""
+    text_value = str(value).strip()
+    if not text_value:
+        return ""
+    if appointment_date_or_none(text_value):
+        return text_value
+    for parser in (
+        lambda item: datetime.strptime(item, "%m/%d/%Y").date(),
+        lambda item: datetime.strptime(item, "%m/%d/%y").date(),
+        lambda item: datetime.strptime(item, "%m-%d-%Y").date(),
+        lambda item: datetime.strptime(item, "%B %d, %Y").date(),
+        lambda item: datetime.strptime(item, "%b %d, %Y").date(),
+    ):
+        try:
+            return parser(text_value).isoformat()
+        except ValueError:
+            continue
+    return text_value
 
 
 def normalize_time(value):
@@ -552,7 +620,6 @@ PUBLIC_STATIC_ROUTES = [
     "main.care_process",
     "main.free_consultation",
     "main.schedule_consultation",
-    "main.portal",
     "main.referrals",
     "main.care_standards",
     "main.caregivers",
@@ -560,7 +627,6 @@ PUBLIC_STATIC_ROUTES = [
     "main.testimonials",
     "main.care_programs",
     "main.resources",
-    "main.administrator",
     "main.careers",
     "main.contact",
     "main.care",
@@ -1189,6 +1255,15 @@ def create_consultation_inquiry(reason="Scheduled consultation"):
 @main_bp.route("/free-consultation", methods=["GET", "POST"])
 def free_consultation():
     if request.method == "POST":
+        blocked = reject_public_submission(
+            "consultation",
+            "main.free_consultation",
+            request.form.get("message"),
+            request.form.get("specific_needs"),
+            request.form.get("diagnosis_notes"),
+        )
+        if blocked:
+            return blocked
         if create_consultation_inquiry("Free consultation") is None:
             return redirect(url_for("main.free_consultation"))
         return redirect(url_for("main.thank_you", reason="consultation"))
@@ -1205,6 +1280,14 @@ def free_consultation():
 @main_bp.route("/schedule-consultation", methods=["GET", "POST"])
 def schedule_consultation():
     if request.method == "POST":
+        blocked = reject_public_submission(
+            "consultation",
+            "main.schedule_consultation",
+            request.form.get("message"),
+            request.form.get("specific_needs"),
+        )
+        if blocked:
+            return blocked
         if create_consultation_inquiry("Scheduled consultation") is None:
             return redirect(url_for("main.schedule_consultation"))
         flash("Your consultation request was received. Staff will follow up as soon as possible.", "success")
@@ -1228,6 +1311,10 @@ def quick_message():
         for error in errors:
             flash(error, "danger")
         return safe_redirect(request.referrer, "main.contact")
+
+    blocked = reject_public_submission("quick-message", "main.contact", message)
+    if blocked:
+        return blocked
 
     inquiry = Inquiry(
         name=name,
@@ -1499,6 +1586,15 @@ def referrals():
                 flash(error, "danger")
             return redirect(url_for("main.referrals"))
 
+        blocked = reject_public_submission(
+            "referral",
+            "main.referrals",
+            request.form.get("notes"),
+            request.form.get("care_needed"),
+        )
+        if blocked:
+            return blocked
+
         referral = Referral(
             referral_source=referral_source,
             source_phone=source_phone,
@@ -1575,6 +1671,15 @@ def contact():
                 flash(error, "danger")
             return redirect(url_for("main.contact"))
 
+        blocked = reject_public_submission(
+            "contact",
+            "main.contact",
+            message,
+            request.form.get("reason"),
+        )
+        if blocked:
+            return blocked
+
         inquiry = Inquiry(
             name=name,
             email=email,
@@ -1646,6 +1751,15 @@ def employment_application():
             for error in errors:
                 flash(error, "danger")
             return redirect(url_for("main.employment_application"))
+
+        blocked = reject_public_submission(
+            "application",
+            "main.employment_application",
+            experience,
+            request.form.get("applicant_references"),
+        )
+        if blocked:
+            return blocked
 
         resume_filename = save_application_upload(request.files.get("resume"))
         requirements = request.form.getlist("requirements")
@@ -1858,6 +1972,49 @@ def health_detail_checks():
     return checks
 
 
+def notification_delivery_alert():
+    """Summarize recent notification failures so staff do not assume sends worked.
+
+    Returns a dict describing the worst recent problem, or ``None`` when the
+    recent log looks clean or cannot be read.
+    """
+    try:
+        recent = NotificationLog.query.order_by(NotificationLog.created_at.desc()).limit(50).all()
+    except Exception:
+        current_app.logger.exception("Could not summarize recent notifications")
+        return None
+
+    failed = [item for item in recent if item.status == "failed"]
+    skipped = [item for item in recent if item.status == "skipped"]
+    if not failed and not skipped:
+        return None
+
+    smtp_configured = bool(current_app.config.get("MAIL_SERVER"))
+    if failed:
+        level = "danger"
+        headline = f"{len(failed)} recent notification(s) failed to send."
+    else:
+        level = "warning"
+        headline = f"{len(skipped)} recent notification(s) were skipped."
+
+    hint = ""
+    if not smtp_configured:
+        hint = "Email is not configured, so no notification can leave the server."
+    elif failed:
+        hint = "Check the SMTP settings and the notification log for the error text."
+
+    latest = recent[0]
+    return {
+        "level": level,
+        "headline": headline,
+        "hint": hint,
+        "latest_status": latest.status,
+        "latest_subject": latest.subject or "",
+        "latest_channel": latest.channel,
+        "latest_error": short_status_error(latest.error) if latest.error else "",
+    }
+
+
 def health_status_data():
     upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
     try:
@@ -1885,6 +2042,7 @@ def dashboard():
 
     if current_user.role == "admin":
         email_ready = bool(app_config_value("MAIL_SERVER") and app_config_value("ADMIN_EMAIL"))
+        notification_alert = notification_delivery_alert()
         stats = {
             "users": User.query.count(),
             "appointments": Appointment.query.count(),
@@ -1914,6 +2072,7 @@ def dashboard():
             recent_applications=recent_applications,
             recent_users=recent_users,
             email_ready=email_ready,
+            notification_alert=notification_alert,
             readiness_items=READINESS_ITEMS,
         )
 
@@ -2112,6 +2271,25 @@ def contains_query(*values, query):
     return query in combined
 
 
+def search_terms(query):
+    """Split a raw search string into individual lower-cased terms."""
+    return [term for term in query.split() if term]
+
+
+def sql_text_search(query, *columns):
+    """Build a SQL predicate matching every search term in any column.
+
+    Pushing the match into SQL means the whole table is searched, so an older
+    record is not missed just because it falls outside a fixed row window.
+    """
+    terms = search_terms(query)
+    clauses = []
+    for term in terms:
+        like = f"%{term}%"
+        clauses.append(or_(*[column.ilike(like) for column in columns]))
+    return and_(*clauses) if clauses else true()
+
+
 MESSAGE_TOPICS = [
     "Scheduling",
     "Care plan question",
@@ -2301,42 +2479,33 @@ def admin_search():
     }
 
     if query:
-        results["users"] = [
-            item for item in User.query.order_by(User.created_at.desc()).limit(250).all()
-            if contains_query(item.name, item.email, item.phone, item.role, query=query)
-        ][:25]
-        results["inquiries"] = [
-            item for item in Inquiry.query.order_by(Inquiry.created_at.desc()).limit(250).all()
-            if contains_query(item.name, item.email, item.phone, item.reason, item.message, item.status, query=query)
-        ][:25]
-        results["referrals"] = [
-            item for item in Referral.query.order_by(Referral.created_at.desc()).limit(250).all()
-            if contains_query(item.referral_source, item.client_name, item.client_phone, item.care_needed, item.status, query=query)
-        ][:25]
-        results["applications"] = [
-            item for item in CaregiverApplication.query.order_by(CaregiverApplication.created_at.desc()).limit(250).all()
-            if contains_query(item.name, item.email, item.phone, item.availability, item.certifications, item.status, query=query)
-        ][:25]
-        results["care_plans"] = [
-            item for item in CarePlan.query.order_by(CarePlan.updated_at.desc()).limit(250).all()
-            if contains_query(item.client_name, item.client_phone, item.service_type, item.schedule, item.status, query=query)
-        ][:25]
-        results["appointments"] = [
-            item for item in Appointment.query.order_by(Appointment.created_at.desc()).limit(250).all()
-            if contains_query(item.client.name if item.client else "", item.service_type, item.service_address, item.notes, item.status, query=query)
-        ][:25]
-        results["messages"] = [
-            item for item in PortalMessage.query.order_by(PortalMessage.updated_at.desc()).limit(250).all()
-            if contains_query(item.sender.name if item.sender else "", item.sender.email if item.sender else "", item.topic, item.subject, item.body, item.status, query=query)
-        ][:25]
-        results["documents"] = [
-            item for item in ClientDocument.query.order_by(ClientDocument.created_at.desc()).limit(250).all()
-            if contains_query(item.owner.name if item.owner else "", item.owner.email if item.owner else "", item.title, item.category, item.original_filename, item.notes, query=query)
-        ][:25]
-        results["admin_notes"] = [
-            item for item in AdminNote.query.order_by(AdminNote.created_at.desc()).limit(250).all()
-            if contains_query(item.subject_user.name if item.subject_user else "", item.subject_user.email if item.subject_user else "", item.note, query=query)
-        ][:25]
+        results["users"] = User.query.filter(
+            sql_text_search(query, User.name, User.email, User.phone, User.role)
+        ).order_by(User.created_at.desc()).limit(25).all()
+        results["inquiries"] = Inquiry.query.filter(
+            sql_text_search(query, Inquiry.name, Inquiry.email, Inquiry.phone, Inquiry.reason, Inquiry.message, Inquiry.status)
+        ).order_by(Inquiry.created_at.desc()).limit(25).all()
+        results["referrals"] = Referral.query.filter(
+            sql_text_search(query, Referral.referral_source, Referral.client_name, Referral.client_phone, Referral.care_needed, Referral.status)
+        ).order_by(Referral.created_at.desc()).limit(25).all()
+        results["applications"] = CaregiverApplication.query.filter(
+            sql_text_search(query, CaregiverApplication.name, CaregiverApplication.email, CaregiverApplication.phone, CaregiverApplication.availability, CaregiverApplication.certifications, CaregiverApplication.status)
+        ).order_by(CaregiverApplication.created_at.desc()).limit(25).all()
+        results["care_plans"] = CarePlan.query.filter(
+            sql_text_search(query, CarePlan.client_name, CarePlan.client_phone, CarePlan.service_type, CarePlan.schedule, CarePlan.status)
+        ).order_by(CarePlan.updated_at.desc()).limit(25).all()
+        results["appointments"] = Appointment.query.join(User, Appointment.client_id == User.id).filter(
+            sql_text_search(query, User.name, Appointment.service_type, Appointment.service_address, Appointment.notes, Appointment.status)
+        ).order_by(Appointment.created_at.desc()).limit(25).all()
+        results["messages"] = PortalMessage.query.join(User, PortalMessage.sender_id == User.id).filter(
+            sql_text_search(query, User.name, User.email, PortalMessage.topic, PortalMessage.subject, PortalMessage.body, PortalMessage.status)
+        ).order_by(PortalMessage.updated_at.desc()).limit(25).all()
+        results["documents"] = ClientDocument.query.join(User, ClientDocument.owner_id == User.id).filter(
+            sql_text_search(query, User.name, User.email, ClientDocument.title, ClientDocument.category, ClientDocument.original_filename, ClientDocument.notes)
+        ).order_by(ClientDocument.created_at.desc()).limit(25).all()
+        results["admin_notes"] = AdminNote.query.join(User, AdminNote.subject_user_id == User.id).filter(
+            sql_text_search(query, User.name, User.email, AdminNote.note)
+        ).order_by(AdminNote.created_at.desc()).limit(25).all()
 
     total_results = sum(len(items) for items in results.values())
     return render_template(
@@ -2827,17 +2996,31 @@ def admin_send_reminders(label):
     appointments = active_appointment_query().filter_by(date=target_date).all()
     sent_count = 0
     skipped_count = 0
+    failed_count = 0
     for appointment in appointments:
         if appointment.reminder_sent_for == key:
             skipped_count += 1
             continue
         if send_visit_reminder(appointment, label):
             sent_count += 1
-        appointment.reminder_sent_for = key
+            # Only record delivery once a channel actually accepted the message,
+            # so an appointment with no reachable recipient is retried later.
+            appointment.reminder_sent_for = key
+        else:
+            failed_count += 1
 
-    audit("send_visit_reminders", "Appointment", None, f"{label}: sent {sent_count}, skipped {skipped_count}")
+    audit(
+        "send_visit_reminders",
+        "Appointment",
+        None,
+        f"{label}: sent {sent_count}, skipped {skipped_count}, failed {failed_count}",
+    )
     db.session.commit()
-    flash(f"Reminder run complete. Sent {sent_count}; skipped {skipped_count} already sent.", "success")
+    flash(
+        f"Reminder run complete. Sent {sent_count}; skipped {skipped_count} already sent; "
+        f"{failed_count} could not be delivered and will be retried.",
+        "warning" if failed_count else "success",
+    )
     return safe_redirect(request.referrer, "main.admin_reports")
 
 
@@ -2968,6 +3151,10 @@ def admin_create_user():
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("main.admin_create_user"))
 
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
+            return redirect(url_for("main.admin_create_user"))
+
         user = User(
             name=request.form.get("name", "").strip(),
             email=email,
@@ -2999,6 +3186,9 @@ def admin_update_user_role(user_id):
     user = get_record_or_404(User, user_id)
     new_role = requested_role(request.form, user.role)
     if new_role != user.role:
+        if user.role == "admin" and new_role != "admin" and active_admin_count(exclude_user_id=user.id) == 0:
+            flash("Cannot demote the only active administrator. Add another admin first.", "danger")
+            return redirect(url_for("main.admin_users"))
         audit("update_user_role", "User", user.id, f"Role changed from {user.role} to {new_role}")
         user.role = new_role
     db.session.commit()
@@ -3387,6 +3577,10 @@ def admin_delete_user(user_id):
         flash("You cannot delete your own admin account.", "danger")
         return redirect(url_for("main.admin_users"))
 
+    if account.role == "admin" and active_admin_count(exclude_user_id=account.id) == 0:
+        flash("Cannot delete the only active administrator. Add another admin first.", "danger")
+        return redirect(url_for("main.admin_users"))
+
     audit("delete_user", "User", account.id, f"Deleted {account.email}")
     db.session.delete(account)
     db.session.commit()
@@ -3694,8 +3888,8 @@ def request_care():
         )
         appointment = Appointment(
             client_id=current_user.id,
-            date=request.form.get("date"),
-            time=request.form.get("time"),
+            date=normalize_date(request.form.get("date")),
+            time=normalize_time(request.form.get("time")),
             service_type=request.form.get("service_type"),
             service_address=request.form.get("service_address", "").strip(),
             schedule_preference=request.form.get("schedule_preference", "").strip(),
@@ -3895,7 +4089,7 @@ def assign_caregiver(appointment_id):
 def admin_move_appointment(appointment_id):
     require_role("admin")
     appointment = get_record_or_404(Appointment, appointment_id)
-    new_date = request.form.get("date", "").strip()
+    new_date = normalize_date(request.form.get("date", "").strip())
     new_time = request.form.get("time", "").strip()
 
     if not appointment_date_or_none(new_date) or not new_time:
@@ -3904,7 +4098,7 @@ def admin_move_appointment(appointment_id):
 
     old_value = f"{appointment.date} {appointment.time}"
     appointment.date = new_date
-    appointment.time = new_time
+    appointment.time = normalize_time(new_time)
     conflicts = caregiver_assignment_conflicts(appointment, appointment.caregiver_id) if appointment.caregiver_id else []
     conflict_note = f"; conflict warnings: {len(conflicts)}" if conflicts else ""
     audit("move_appointment", "Appointment", appointment.id, f"{old_value} -> {new_date} {new_time}{conflict_note}")
@@ -4100,8 +4294,8 @@ def edit_appointment(appointment_id):
         return "Unauthorized", 403
 
     if request.method == "POST":
-        appointment.date = request.form.get("date", appointment.date)
-        appointment.time = request.form.get("time", appointment.time)
+        appointment.date = normalize_date(request.form.get("date", appointment.date))
+        appointment.time = normalize_time(request.form.get("time", appointment.time))
         appointment.service_type = request.form.get("service_type", appointment.service_type)
         appointment.notes = request.form.get("notes", appointment.notes)
         audit("edit_appointment", "Appointment", appointment.id, "Appointment updated")

@@ -35,7 +35,9 @@ services:
       # NOTE: FORCE_HTTPS is intentionally NOT pinned here. The app defaults
       # it on in production (correct behind TLS-terminating Nginx); test and
       # staging environments set FORCE_HTTPS=false in their own env file.
-      AUTO_MIGRATE_ON_STARTUP: "true"
+      # Migrations run once in `command` below, not on app startup, so
+      # AUTO_MIGRATE_ON_STARTUP stays false (single migration strategy).
+      AUTO_MIGRATE_ON_STARTUP: "false"
       SITE_BASE_URL: https://ableshomehealthcare.com
       UPLOAD_FOLDER: /app/instance/uploads
       MAX_CONTENT_LENGTH: "5242880"

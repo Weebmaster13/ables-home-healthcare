@@ -12,16 +12,18 @@ caregiver, referral, appointment, or document data.
 
 ## 2. Hosting
 
-Recommended: Render or Railway.
+Production runs on the GoDaddy VPS (Ubuntu, Docker + Nginx + PostgreSQL).
+See `DEPLOYMENT.md` — that is the single authoritative deployment guide.
+Render/Railway files are kept for history only; do not configure more than
+one platform at a time.
 
-Render is prepared with:
+Prepared deployment files:
 
-- `render.yaml`
-- `runtime.txt`
 - `Procfile`
+- `runtime.txt` / `.python-version`
 - `gunicorn wsgi:app`
-- `flask --app app db upgrade`
-- `/healthz` health check
+- `flask --app app db upgrade` (run once as an explicit deploy step)
+- `/healthz` liveness check
 
 ## 3. PostgreSQL
 
@@ -70,16 +72,22 @@ FLASK_ENV=production
 FORCE_HTTPS=true
 ACCOUNT_LOCKOUT_ATTEMPTS=5
 ACCOUNT_LOCKOUT_MINUTES=15
-ADMIN_RECOVERY_CODES_REQUIRED=false
+ADMIN_RECOVERY_CODES_REQUIRED=true
+PASSWORD_BREACH_CHECK_ENABLED=true
+VIRUS_SCAN_COMMAND=clamdscan --stream
 ```
 
-After launch, consider setting `ADMIN_RECOVERY_CODES_REQUIRED=true`.
+`ADMIN_RECOVERY_CODES_REQUIRED` defaults on in production. Keep it true.
+`VIRUS_SCAN_COMMAND` must be set so uploads are scanned by a real engine
+(the built-in EICAR check is not a substitute).
 
 ## 6. Uploads And Backups
 
-- Use the host disk only for a small first launch.
+- Set `UPLOAD_FOLDER` to persistent storage (for example `/var/lib/ables/uploads`), never `/tmp`.
 - Long term, move uploads to cloud storage such as S3, Backblaze B2, DigitalOcean Spaces, or Cloudinary.
+- Back up the PostgreSQL database with `python backup_db.py` (uses `pg_dump` when `DATABASE_URL` is PostgreSQL) and keep a verified copy off-host.
 - Keep upload backups separate from database backups.
+- Verify a restore before relying on any backup.
 - Review uploaded document privacy and retention rules.
 
 ## 7. Legal And Business Review

@@ -2,8 +2,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import logging
 
-from flask import Flask, redirect, request, url_for
-from flask_login import current_user
+from flask import Flask, flash, redirect, request, session, url_for
+from flask_login import current_user, logout_user
 from flask_migrate import upgrade
 from config import Config
 from extensions import csrf, db, login_manager, migrate
@@ -29,6 +29,7 @@ def create_app():
 
     configure_logging(app)
     register_https_enforcement(app)
+    register_session_invalidation(app)
     register_admin_recovery_gate(app)
     register_security_headers(app)
     register_error_handlers(app)
@@ -100,6 +101,41 @@ def register_template_helpers(app):
             ).count()
 
         return counts
+
+
+def register_session_invalidation(app):
+    """End sessions whose password changed after the session was established.
+
+    Flask-Login's strong session protection ties a session to a client id, but
+    it does not invalidate an existing session when the password changes. This
+    gate closes that gap: it stores a fingerprint of the current password hash
+    in the session and, on every request, compares it to the user's current
+    password hash. A mismatch means the password changed (or the session was
+    forged from an older credential), so the session is cleared. Any session
+    cookie stolen before a password change stops working immediately.
+    """
+    from security import password_fingerprint
+
+    @app.before_request
+    def invalidate_stale_sessions():
+        if not current_user.is_authenticated:
+            return None
+
+        fingerprint = password_fingerprint(current_user)
+        session_fingerprint = session.get("_pw_fp")
+        if session_fingerprint is None:
+            # Session predates this gate (for example after a deploy); adopt
+            # the current password rather than logging the user out.
+            session["_pw_fp"] = fingerprint
+            return None
+
+        if session_fingerprint != fingerprint:
+            logout_user()
+            session.clear()
+            flash("Your password was changed. Please log in again.", "info")
+            return redirect(url_for("auth.login"))
+
+        return None
 
 
 def register_admin_recovery_gate(app):

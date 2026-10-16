@@ -290,7 +290,7 @@ def test_upload_scanner_rejects_eicar_signature():
 
 def test_upload_mime_validation_accepts_documents_and_blocks_fake_extension():
     with app.app_context():
-        good = FileStorage(stream=BytesIO(b"%PDF safe"), filename="safe.pdf")
+        good = FileStorage(stream=BytesIO(b"%PDF-1.4 safe contents"), filename="safe.pdf")
         stored, original = save_private_upload(good, "test-documents", "test", allowed_document)
         assert stored.endswith(".pdf")
         assert original == "safe.pdf"
@@ -327,7 +327,7 @@ def test_client_can_request_appointment_and_manage_document():
                 "title": "Test Document",
                 "category": "Intake",
                 "document_consent": "yes",
-                "document": (BytesIO(b"safe file"), "test-document.pdf"),
+                "document": (BytesIO(b"%PDF-1.4 test document"), "test-document.pdf"),
             },
             content_type="multipart/form-data",
             follow_redirects=False,
@@ -1153,4 +1153,294 @@ def test_inactive_user_session_is_rejected():
 
     with app.app_context():
         User.query.filter_by(id=user.id).delete()
+
+
+def test_password_change_invalidates_other_sessions():
+    with app.app_context():
+        user, password = create_user("client")
+
+    with app.test_client() as client:
+        assert login(client, user, password).status_code == 302
+        assert client.get("/dashboard").status_code == 200
+
+        # Simulate a password change elsewhere (another device/session).
+        with app.app_context():
+            account = db.session.get(User, user.id)
+            account.password = generate_password_hash("RotatedPass2026!")
+            db.session.commit()
+
+        protected = client.get("/dashboard", follow_redirects=False)
+        assert protected.status_code == 302
+        assert "/auth/login" in protected.headers["Location"]
+
+    with app.app_context():
+        User.query.filter_by(id=user.id).delete()
         db.session.commit()
+
+
+def test_login_rate_limit_uses_shared_database_store():
+    from datetime import datetime, timezone, timedelta
+    from security import LOGIN_WINDOW, LoginAttempt
+
+    with app.app_context():
+        key = "203.0.113.77"
+        LoginAttempt.query.filter_by(key=key).delete()
+        db.session.commit()
+        # A failure recorded by one worker must be visible to the limiter that
+        # any other worker reads from the shared store.
+        db.session.add(LoginAttempt(key=key))
+        db.session.commit()
+        recent = LoginAttempt.query.filter(
+            LoginAttempt.key == key,
+            LoginAttempt.attempted_at >= datetime.now(timezone.utc) - LOGIN_WINDOW,
+        ).count()
+        assert recent == 1
+
+        # Stale attempts outside the window are pruned and do not count.
+        stale = LoginAttempt(
+            key=key,
+            attempted_at=datetime.now(timezone.utc) - LOGIN_WINDOW - timedelta(minutes=1),
+        )
+        db.session.add(stale)
+        db.session.commit()
+        LoginAttempt.query.filter(
+            LoginAttempt.attempted_at < datetime.now(timezone.utc) - LOGIN_WINDOW
+        ).delete()
+        db.session.commit()
+        assert LoginAttempt.query.filter_by(key=key).count() == 1
+        LoginAttempt.query.filter_by(key=key).delete()
+        db.session.commit()
+
+
+def test_content_type_mismatch_is_rejected():
+    from routes import content_matches_extension
+
+    assert content_matches_extension("ok.pdf", b"%PDF-1.7 body")
+    assert content_matches_extension("ok.png", b"\x89PNG\r\n\x1a\nrest")
+    assert content_matches_extension("ok.docx", b"PK\x03\x04rest")
+    assert not content_matches_extension("fake.pdf", b"MZ\x90\x00windows binary")
+    assert not content_matches_extension("fake.png", b"<html>not an image</html>")
+
+
+def test_breached_password_check_fails_open_without_network(monkeypatch):
+    from security import password_is_breached
+
+    def boom(*args, **kwargs):
+        raise OSError("network unavailable")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    with app.app_context():
+        app.config["PASSWORD_BREACH_CHECK_ENABLED"] = True
+        try:
+            # A network failure must never block account creation.
+            assert password_is_breached("SafePass2026!") is False
+            assert password_is_breached("") is False
+        finally:
+            app.config["PASSWORD_BREACH_CHECK_ENABLED"] = False
+
+
+def test_breached_password_check_can_be_disabled():
+    from security import password_is_breached
+
+    with app.app_context():
+        app.config["PASSWORD_BREACH_CHECK_ENABLED"] = False
+        # Disabled means no outbound call and no rejection.
+        assert password_is_breached("password") is False
+
+
+def test_public_form_honeypot_blocks_submission():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("honeypot")
+    with app.app_context():
+        Inquiry.query.filter_by(email=email).delete()
+        db.session.commit()
+
+    with app.test_client() as client:
+        response = client.post(
+            "/contact",
+            data={
+                "name": "Spam Bot",
+                "email": email,
+                "message": "Hello, please contact me.",
+                "website": "http://spam.example.com",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert "/thank-you" not in response.headers["Location"]
+
+    with app.app_context():
+        assert Inquiry.query.filter_by(email=email).first() is None
+
+
+def test_public_form_rejects_link_spam():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("spamlink")
+    with app.app_context():
+        Inquiry.query.filter_by(email=email).delete()
+        db.session.commit()
+
+    with app.test_client() as client:
+        response = client.post(
+            "/contact",
+            data={
+                "name": "Link Spammer",
+                "email": email,
+                "message": "Buy cheap pills at http://example-spam.test/offer",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert "/thank-you" not in response.headers["Location"]
+
+    with app.app_context():
+        assert Inquiry.query.filter_by(email=email).first() is None
+
+
+def test_public_form_rate_limit_blocks_repeat_submissions():
+    app.config["WTF_CSRF_ENABLED"] = False
+    from security import PUBLIC_FORM_LIMIT, LoginAttempt
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:quick-message:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+    with app.test_client() as client:
+        blocked_at = None
+        for index in range(PUBLIC_FORM_LIMIT + 2):
+            response = client.post(
+                "/quick-message",
+                data={"name": "Repeat", "contact": "repeat@example.com", "message": "Please call me back."},
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+            if "/thank-you" not in response.headers["Location"] and blocked_at is None:
+                blocked_at = index
+        # At most the configured number of submissions get through.
+        assert blocked_at == PUBLIC_FORM_LIMIT
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:quick-message:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+
+def test_admin_dashboard_shows_notification_failure_alert():
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+        db.session.add(NotificationLog(
+            channel="email",
+            recipient="admin@example.com",
+            subject="New Ables Home Healthcare website inquiry",
+            status="failed",
+            provider="smtp",
+            error="Connection refused",
+        ))
+        db.session.commit()
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+        response = client.get("/dashboard")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    # Staff must see that a notification did not send, not a silent success.
+    assert "failed to send" in body
+    assert "/admin/notifications" in body
+
+    with app.app_context():
+        User.query.filter_by(id=admin.id).delete()
+
+
+def test_last_active_admin_cannot_be_demoted_or_deleted():
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+        admin_id = admin.id
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+
+        demote = client.post(
+            f"/admin/users/{admin_id}/role",
+            data={"role": "client"},
+            follow_redirects=False,
+        )
+        assert demote.status_code == 302
+
+        delete = client.post(
+            f"/admin/users/{admin_id}/delete",
+            data={},
+            follow_redirects=False,
+        )
+        assert delete.status_code == 302
+
+    with app.app_context():
+        # The only active administrator must still exist and keep the admin role.
+        still_admin = db.session.get(User, admin_id)
+        assert still_admin is not None
+        assert still_admin.role == "admin"
+
+    with app.app_context():
+        User.query.filter_by(id=admin_id).delete()
+        db.session.commit()
+
+
+
+
+def test_admin_global_search_finds_older_records():
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+        # Create enough newer rows to exceed the old 250-row in-Python window.
+        for i in range(260):
+            db.session.add(Inquiry(
+                name=f"Filler {i}",
+                email=f"filler-{i}-{uuid.uuid4().hex}@example.com",
+                message="filler",
+            ))
+        db.session.add(Inquiry(
+            name="Zelda Needle",
+            email=f"needle-{uuid.uuid4().hex}@example.com",
+            message="unique needle marker for search",
+        ))
+        db.session.commit()
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+        response = client.get("/admin/search?q=needle%20marker")
+    assert response.status_code == 200
+    assert b"Zelda Needle" in response.data
+
+    with app.app_context():
+        Inquiry.query.filter(Inquiry.name.like("Filler %")).delete(synchronize_session=False)
+        User.query.filter_by(id=admin.id).delete()
+        db.session.commit()
+
+
+def test_csv_export_neutralizes_formula_injection():
+    from routes import csv_safe_cell
+
+    assert csv_safe_cell("=cmd|' /C calc'!A0") == "'=cmd|' /C calc'!A0"
+    assert csv_safe_cell("+1234") == "'+1234"
+    assert csv_safe_cell("-2+3") == "'-2+3"
+    assert csv_safe_cell("@SUM(A1)") == "'@SUM(A1)"
+    # Ordinary text and numbers are untouched.
+    assert csv_safe_cell("Normal note") == "Normal note"
+    assert csv_safe_cell(42) == 42
+
+
+def test_normalize_date_canonicalizes_common_formats():
+    from routes import normalize_date
+
+    assert normalize_date("2026-03-01") == "2026-03-01"
+    assert normalize_date("03/01/2026") == "2026-03-01"
+    assert normalize_date("3-1-2026") == "2026-03-01"
+    assert normalize_date("March 1, 2026") == "2026-03-01"
+    assert normalize_date("") == ""
+    # Unrecognized text is preserved rather than silently dropped.
+    assert normalize_date("next week") == "next week"
+
+

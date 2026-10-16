@@ -53,6 +53,20 @@
     <a class="btn btn-primary" href="/launch-readiness">Launch Checklist</a>
 </section>
 
+{% if notification_alert %}
+<div class="alert alert-{{ notification_alert.level }} mt-3" role="alert">
+    <strong>{{ notification_alert.headline }}</strong>
+    {% if notification_alert.hint %}<span> {{ notification_alert.hint }}</span>{% endif %}
+    {% if notification_alert.latest_subject %}
+    <div class="small mt-1">
+        Latest: {{ notification_alert.latest_channel }} &middot; {{ notification_alert.latest_subject }}
+        ({{ notification_alert.latest_status }}){% if notification_alert.latest_error %}: {{ notification_alert.latest_error }}{% endif %}
+    </div>
+    {% endif %}
+    <div class="mt-2"><a href="/admin/notifications">Review the notification log</a></div>
+</div>
+{% endif %}
+
 <section class="row g-4 mt-2">
     <div class="col-lg-7">
         <div class="content-card h-100">

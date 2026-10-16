@@ -94,6 +94,12 @@ def create_backup(include_uploads=True):
 
 
 def cleanup_old_backups(keep=10):
+    """Delete the oldest local backups, keeping the most recent ``keep``.
+
+    This only removes *local* copies. It is safe solely when independent,
+    verified backups exist off-site (upload them to durable off-host storage
+    before relying on this). Retention never removes the newest backup.
+    """
     BACKUP_DIR.mkdir(exist_ok=True)
     backups = sorted(
         [
@@ -110,13 +116,74 @@ def cleanup_old_backups(keep=10):
     return removed
 
 
+def verify_backup(path):
+    """Confirm a backup file is readable and structurally intact.
+
+    For a ZIP bundle, verify the archive opens and every member is readable.
+    For a custom-format ``pg_dump`` file, verify the file is non-empty; a full
+    restore test still requires ``pg_restore --list`` against a real dump.
+    """
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size == 0:
+        return False, "Backup file is missing or empty."
+
+    if path.suffix == ".zip":
+        try:
+            with zipfile.ZipFile(path) as archive:
+                corrupt = archive.testzip()
+                if corrupt:
+                    return False, f"Corrupt entry in backup archive: {corrupt}"
+                names = archive.namelist()
+                if "database.dump" not in names and "ablehome.db" not in names:
+                    return False, "Backup archive contains no database dump."
+                if "database.dump" in names:
+                    ok, message = _verify_pg_dump_member(archive)
+                    if not ok:
+                        return False, message
+        except zipfile.BadZipFile:
+            return False, "Backup archive could not be opened."
+    return True, "Backup verified as readable."
+
+
+def _verify_pg_dump_member(archive):
+    """Run ``pg_restore --list`` against the bundled dump when pg_restore exists.
+
+    This catches a truncated or corrupt custom-format dump that a plain ZIP
+    integrity check would miss. If ``pg_restore`` is unavailable we fall back
+    to a non-empty size check rather than failing the whole backup.
+    """
+    import tempfile
+
+    if shutil.which("pg_restore") is None:
+        return True, "pg_restore unavailable; archive integrity checked only."
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dump_path = Path(tmpdir) / "database.dump"
+        with archive.open("database.dump") as source, open(dump_path, "wb") as target:
+            shutil.copyfileobj(source, target)
+        if dump_path.stat().st_size == 0:
+            return False, "Bundled database dump is empty."
+        result = subprocess.run(
+            ["pg_restore", "--list", str(dump_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            return False, "pg_restore could not read the bundled dump: " + result.stderr.decode("utf-8", "replace").strip()
+    return True, "Backup verified: archive readable and pg_dump table of contents lists successfully."
+
+
 def main():
     if _is_postgres(_database_url()):
         backup_path = create_postgres_backup(include_uploads=True)
-        print(f"PostgreSQL backup created: {backup_path}")
     else:
         backup_path = create_sqlite_backup(include_uploads=True)
-        print(f"Backup created: {backup_path}")
+
+    ok, message = verify_backup(backup_path)
+    print(f"{'Backup created' if ok else 'Backup FAILED verification'}: {backup_path} ({message})")
+    if not ok:
+        raise SystemExit(1)
+    print("Upload this file to durable, off-site storage to complete a real backup.")
 
 
 if __name__ == "__main__":

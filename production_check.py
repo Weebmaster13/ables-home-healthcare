@@ -63,6 +63,21 @@ CHECKS = [
         "Set FORCE_HTTPS=true in production.",
     ),
     (
+        "Admin recovery codes required",
+        lambda c: c.get("ADMIN_RECOVERY_CODES_REQUIRED") is True,
+        "Set ADMIN_RECOVERY_CODES_REQUIRED=true in production.",
+    ),
+    (
+        "Upload antivirus scanner",
+        lambda c: configured(c.get("VIRUS_SCAN_COMMAND")),
+        "Set VIRUS_SCAN_COMMAND (for example: clamdscan --stream) so uploads are really scanned.",
+    ),
+    (
+        "Durable upload storage",
+        lambda c: bool(c.get("UPLOAD_FOLDER")) and not str(c.get("UPLOAD_FOLDER", "")).startswith(("/tmp", "/var/tmp")),
+        "Point UPLOAD_FOLDER at persistent storage; /tmp is wiped on restart or redeploy.",
+    ),
+    (
         "Secure sessions",
         lambda c: c.get("SESSION_COOKIE_HTTPONLY") is True and c.get("SESSION_COOKIE_SAMESITE") in {"Lax", "Strict"},
         "Keep HTTP-only session cookies and SameSite enabled.",

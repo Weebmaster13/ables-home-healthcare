@@ -24,6 +24,7 @@
                 <p>For urgent medical symptoms or emergencies, call 911. This form is for non-emergency service questions, referrals, and care coordination.</p>
             </div>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% include "partials/honeypot.html" %}
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label" for="contactName">Full name <span aria-hidden="true">*</span></label>

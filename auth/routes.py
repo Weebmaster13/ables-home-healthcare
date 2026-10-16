@@ -13,6 +13,8 @@ from security import (
     clear_user_login_failures,
     login_is_limited,
     password_feedback,
+    password_fingerprint,
+    password_is_breached,
     password_is_strong,
     record_login_failure,
     record_user_login_failure,
@@ -50,6 +52,10 @@ def register():
         if not password_is_strong(password):
             feedback = password_feedback(password)
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
+            return redirect(url_for("auth.register"))
+
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
             return redirect(url_for("auth.register"))
 
         existing_user = User.query.filter_by(
@@ -138,6 +144,7 @@ def login():
         db.session.commit()
         session.permanent = True
         login_user(user)
+        session["_pw_fp"] = password_fingerprint(user)
 
         flash(
             f"Welcome back, {user.name}!",
@@ -279,6 +286,10 @@ def reset_password(token):
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("auth.reset_password", token=token))
 
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
+            return redirect(url_for("auth.reset_password", token=token))
+
         user.password = generate_password_hash(password)
         user.password_changed_at = db.func.now()
         clear_user_login_failures(user)
@@ -311,10 +322,17 @@ def change_password():
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("auth.change_password"))
 
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
+            return redirect(url_for("auth.change_password"))
+
         current_user.password = generate_password_hash(password)
         current_user.password_changed_at = db.func.now()
         audit("change_password", "User", current_user.id, "Password changed")
         db.session.commit()
+        # Keep this session valid; every other existing session is invalidated
+        # on its next request because its stored fingerprint no longer matches.
+        session["_pw_fp"] = password_fingerprint(current_user)
 
         flash("Password changed successfully.", "success")
         return redirect(url_for("main.dashboard"))
