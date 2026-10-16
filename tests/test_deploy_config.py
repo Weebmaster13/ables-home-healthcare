@@ -1,7 +1,24 @@
 """Deployment-config regression tests: no Docker daemon needed."""
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def test_smoke_workflow_secret_key_passes_production_guard():
+    """The CI dummy key must satisfy the production SECRET_KEY guard.
+
+    A too-short CI key silently breaks the smoke stack (the app refuses to
+    boot), which is exactly what the production guard is meant to prevent.
+    """
+    from config import DEVELOPMENT_SECRET_KEYS
+
+    text = (ROOT / ".github" / "workflows" / "deploy-smoke.yml").read_text()
+    match = re.search(r"^\s*SECRET_KEY=(\S+)\s*$", text, re.MULTILINE)
+    assert match, "deploy-smoke.yml must set a SECRET_KEY for the smoke stack"
+    key = match.group(1)
+    assert len(key) >= 32, f"CI SECRET_KEY too short for the production guard: {len(key)} chars"
+    assert key not in DEVELOPMENT_SECRET_KEYS
 
 
 def test_dockerfile_uses_supported_runtime_and_port():
