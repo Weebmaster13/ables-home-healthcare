@@ -45,7 +45,7 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-later")
     SITE_BASE_URL = os.environ.get(
         "SITE_BASE_URL",
-        "https://ables-home-healthcare.onrender.com"
+        "https://ableshomehealthcare.com"
     ).rstrip("/")
     SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False

@@ -291,6 +291,11 @@ class CaregiverOnboardingItem(db.Model):
 # ---------------- USER LOADER ----------------
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    user = db.session.get(User, int(user_id))
+    # Reject deactivated accounts on every request so an existing session
+    # cannot outlive an administrator disabling the account.
+    if user is None or not user.is_active_account:
+        return None
+    return user
 
 

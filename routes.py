@@ -111,6 +111,38 @@ def apply_created_at_filters(query, model):
     return query
 
 
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def is_valid_email(value):
+    return bool(value) and len(value) <= 254 and EMAIL_PATTERN.match(value) is not None
+
+
+def validate_required(fields):
+    """Return human-readable messages for empty required fields.
+
+    Server-side enforcement matters because browser `required` attributes are
+    trivially bypassed and the public forms previously accepted empty posts.
+    """
+    return [f"{label} is required." for label, value in fields.items() if not value]
+
+
+def safe_redirect(target, fallback_endpoint, **fallback_values):
+    """Redirect only to a same-site path.
+
+    `request.referrer` is attacker-controllable, so redirecting to it blindly
+    enables open-redirect/phishing. Accept only relative paths on this host and
+    fall back to a known endpoint otherwise.
+    """
+    fallback = url_for(fallback_endpoint, **fallback_values)
+    if target:
+        from urllib.parse import urlparse
+        parsed = urlparse(target)
+        if not parsed.scheme and not parsed.netloc and target.startswith("/") and not target.startswith("//"):
+            return redirect(target)
+    return redirect(fallback)
+
+
 def mask_email_address(email):
     if not email or "@" not in email:
         return ""
@@ -1086,6 +1118,17 @@ def care_process():
 
 
 def create_consultation_inquiry(reason="Scheduled consultation"):
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+    phone = request.form.get("phone", "").strip()
+    errors = validate_required({"Full name": name, "Email": email, "Phone": phone})
+    if not is_valid_email(email):
+        errors.append("Enter a valid email address.")
+    if errors:
+        for error in errors:
+            flash(error, "danger")
+        return None
+
     preferred_date = request.form.get("preferred_date", "").strip() or request.form.get("start_date", "").strip()
     preferred_time = request.form.get("preferred_time", "").strip()
     service_needed = request.form.get("service_needed", "").strip() or request.form.get("services_needed", "").strip()
@@ -1146,7 +1189,8 @@ def create_consultation_inquiry(reason="Scheduled consultation"):
 @main_bp.route("/free-consultation", methods=["GET", "POST"])
 def free_consultation():
     if request.method == "POST":
-        create_consultation_inquiry("Free consultation")
+        if create_consultation_inquiry("Free consultation") is None:
+            return redirect(url_for("main.free_consultation"))
         return redirect(url_for("main.thank_you", reason="consultation"))
 
     return render_template(
@@ -1161,8 +1205,9 @@ def free_consultation():
 @main_bp.route("/schedule-consultation", methods=["GET", "POST"])
 def schedule_consultation():
     if request.method == "POST":
-        create_consultation_inquiry("Scheduled consultation")
-        flash("Your consultation request was sent. Staff will follow up as soon as possible.", "success")
+        if create_consultation_inquiry("Scheduled consultation") is None:
+            return redirect(url_for("main.schedule_consultation"))
+        flash("Your consultation request was received. Staff will follow up as soon as possible.", "success")
         return redirect(url_for("main.thank_you", reason="consultation"))
 
     return render_template(
@@ -1176,16 +1221,21 @@ def schedule_consultation():
 @main_bp.route("/quick-message", methods=["POST"])
 def quick_message():
     contact = request.form.get("contact", "").strip()
+    message = request.form.get("message", "").strip()
+    name = request.form.get("name", "").strip()
+    errors = validate_required({"Name": name, "Phone or email": contact, "Message": message})
+    if errors:
+        for error in errors:
+            flash(error, "danger")
+        return safe_redirect(request.referrer, "main.contact")
+
     inquiry = Inquiry(
-        name=request.form.get("name", "").strip() or "Quick Message Visitor",
+        name=name,
         email=contact if "@" in contact else "",
         phone=contact if "@" not in contact else "",
         reason="Quick Message",
-        message=request.form.get("message", "").strip(),
+        message=message,
     )
-    if not inquiry.message:
-        flash("Please enter a message before sending.", "danger")
-        return redirect(request.referrer or url_for("main.contact"))
 
     db.session.add(inquiry)
     db.session.commit()
@@ -1198,8 +1248,8 @@ def quick_message():
         ]),
         reply_to=inquiry.email or None,
     )
-    flash("Your quick message was sent. Staff will respond as soon as possible.", "success")
-    return redirect(request.referrer or url_for("main.thank_you", reason="message"))
+    flash("Your quick message was received. Staff will respond as soon as possible.", "success")
+    return safe_redirect(request.referrer, "main.thank_you", reason="message")
 
 
 @main_bp.route("/portal")
@@ -1247,7 +1297,9 @@ def resources():
 
 
 @main_bp.route("/launch-readiness")
+@login_required
 def launch_readiness():
+    require_permission("admin:reports")
     return render_template(
         "launch_readiness.html",
         readiness_items=READINESS_ITEMS,
@@ -1434,10 +1486,23 @@ def local_seo_page(slug):
 @main_bp.route("/referrals", methods=["GET", "POST"])
 def referrals():
     if request.method == "POST":
+        referral_source = request.form.get("referral_source", "").strip()
+        source_phone = request.form.get("source_phone", "").strip()
+        client_name = request.form.get("client_name", "").strip()
+        errors = validate_required({
+            "Referral source": referral_source,
+            "Referral source phone": source_phone,
+            "Client name": client_name,
+        })
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return redirect(url_for("main.referrals"))
+
         referral = Referral(
-            referral_source=request.form.get("referral_source", "").strip(),
-            source_phone=request.form.get("source_phone", "").strip(),
-            client_name=request.form.get("client_name", "").strip(),
+            referral_source=referral_source,
+            source_phone=source_phone,
+            client_name=client_name,
             client_phone=request.form.get("client_phone", "").strip(),
             care_needed=request.form.get("care_needed", "").strip(),
             follow_up=request.form.get("follow_up", "").strip(),
@@ -1499,12 +1564,23 @@ def careers():
 @main_bp.route("/contact", methods=["GET", "POST"])
 def contact():
     if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        message = request.form.get("message", "").strip()
+        errors = validate_required({"Name": name, "Email": email, "Message": message})
+        if not is_valid_email(email):
+            errors.append("Enter a valid email address.")
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return redirect(url_for("main.contact"))
+
         inquiry = Inquiry(
-            name=request.form.get("name", "").strip(),
-            email=request.form.get("email", "").strip(),
+            name=name,
+            email=email,
             phone=request.form.get("phone", "").strip(),
             reason=request.form.get("reason", "").strip(),
-            message=request.form.get("message", "").strip(),
+            message=message,
         )
 
         db.session.add(inquiry)
@@ -1551,6 +1627,25 @@ def employment_application():
             )
             flash("This application is for CNA, LPN, and RN caregivers right now. Please call the office at 301-455-3030.", "warning")
             return render_template("employment_application.html", blocked_application=True)
+
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        experience = request.form.get("experience", "").strip()
+        errors = validate_required({
+            "Full name": name,
+            "Email": email,
+            "Phone": phone,
+            "Experience": experience,
+        })
+        if not is_valid_email(email):
+            errors.append("Enter a valid email address.")
+        if request.form.get("background_check_consent") != "yes":
+            errors.append("Background check consent is required to apply.")
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return redirect(url_for("main.employment_application"))
 
         resume_filename = save_application_upload(request.files.get("resume"))
         requirements = request.form.getlist("requirements")
@@ -2284,6 +2379,7 @@ def admin_work_queue():
 def admin_system_status():
     require_permission("admin:reports")
     failed_notifications = NotificationLog.query.filter_by(status="failed").order_by(NotificationLog.created_at.desc()).limit(10).all()
+    skipped_notifications = NotificationLog.query.filter_by(status="skipped").order_by(NotificationLog.created_at.desc()).limit(10).all()
     failed_logins = AuditLog.query.filter(AuditLog.action.in_(["login_failure", "admin_recovery_code_failure", "account_locked"])).order_by(AuditLog.created_at.desc()).limit(10).all()
     BACKUP_DIR.mkdir(exist_ok=True)
     backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
@@ -2301,6 +2397,7 @@ def admin_system_status():
         log_path=log_path,
         log_size=log_path.stat().st_size if log_path.exists() else 0,
         failed_notifications=failed_notifications,
+        skipped_notifications=skipped_notifications,
         failed_logins=failed_logins,
         user=current_user,
     )
@@ -2741,7 +2838,7 @@ def admin_send_reminders(label):
     audit("send_visit_reminders", "Appointment", None, f"{label}: sent {sent_count}, skipped {skipped_count}")
     db.session.commit()
     flash(f"Reminder run complete. Sent {sent_count}; skipped {skipped_count} already sent.", "success")
-    return redirect(request.referrer or url_for("main.admin_reports"))
+    return safe_redirect(request.referrer, "main.admin_reports")
 
 
 @main_bp.route("/admin/backups")
@@ -2780,7 +2877,7 @@ def admin_cleanup_backups():
     audit("cleanup_backups", "Backup", None, f"Kept {keep}; removed {len(removed)}")
     db.session.commit()
     flash(f"Backup cleanup complete. Removed {len(removed)} old backup(s).", "success")
-    return redirect(request.referrer or url_for("main.admin_backups"))
+    return safe_redirect(request.referrer, "main.admin_backups")
 
 
 @main_bp.route("/admin/backups/<path:filename>/delete", methods=["POST"])
@@ -3543,7 +3640,7 @@ def archive_document(document_id):
     audit("archive_document", "ClientDocument", document.id, document.title)
     db.session.commit()
     flash("Document archived.", "success")
-    return redirect(request.referrer or url_for("main.documents"))
+    return safe_redirect(request.referrer, "main.documents")
 
 
 @main_bp.route("/documents/<int:document_id>/restore", methods=["POST"])
@@ -3558,7 +3655,7 @@ def restore_document(document_id):
     audit("restore_document", "ClientDocument", document.id, document.title)
     db.session.commit()
     flash("Document restored.", "success")
-    return redirect(request.referrer or url_for("main.documents"))
+    return safe_redirect(request.referrer, "main.documents")
 
 
 @main_bp.route("/documents/<int:document_id>/delete", methods=["POST"])
@@ -3576,7 +3673,7 @@ def delete_document(document_id):
     db.session.delete(document)
     db.session.commit()
     flash("Document permanently deleted.", "success")
-    return redirect(request.referrer or url_for("main.documents"))
+    return safe_redirect(request.referrer, "main.documents")
 
 
 # ---------------- REQUEST CARE ----------------
@@ -3777,7 +3874,7 @@ def assign_caregiver(appointment_id):
             f"{caregiver.name if caregiver else 'Caregiver'} already has a visit at this date and time. Check Override conflict to assign anyway.",
             "danger",
         )
-        return redirect(request.referrer or url_for("main.admin_appointments"))
+        return safe_redirect(request.referrer, "main.admin_appointments")
 
     appointment.caregiver_id = caregiver_id
     appointment.status = "assigned"
@@ -3790,7 +3887,7 @@ def assign_caregiver(appointment_id):
 
     db.session.commit()
 
-    return redirect(request.referrer or url_for("main.admin_appointments"))
+    return safe_redirect(request.referrer, "main.admin_appointments")
 
 
 @main_bp.route("/admin/appointment/<int:appointment_id>/move", methods=["POST"])
@@ -3828,7 +3925,7 @@ def create_recurring_appointments(appointment_id):
     start_date = appointment_date_or_none(source.date)
     if not start_date:
         flash("Add a valid appointment date before creating recurring visits.", "danger")
-        return redirect(request.referrer or url_for("main.admin_appointments"))
+        return safe_redirect(request.referrer, "main.admin_appointments")
 
     try:
         count = int(request.form.get("count") or request.form.get("weeks", "4"))
@@ -3894,7 +3991,7 @@ def create_recurring_appointments(appointment_id):
     )
     db.session.commit()
     flash(f"Created {created} recurring visit(s). Skipped {skipped} duplicate(s).", "success")
-    return redirect(request.referrer or url_for("main.admin_schedule"))
+    return safe_redirect(request.referrer, "main.admin_schedule")
 
 
 @main_bp.route("/admin/recurring/<group_id>/<action>", methods=["POST"])
@@ -3917,7 +4014,7 @@ def admin_update_recurring_series(group_id, action):
     audit("update_recurring_series", "Appointment", None, f"{group_id}: {action}")
     db.session.commit()
     flash(f"Recurring series {action}d.", "success")
-    return redirect(request.referrer or url_for("main.admin_schedule"))
+    return safe_redirect(request.referrer, "main.admin_schedule")
 
 
 # ---------------- CAREGIVER SCHEDULE ----------------

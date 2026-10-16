@@ -1059,3 +1059,98 @@ def test_backup_dispatches_to_postgres_when_configured(monkeypatch):
     assert result.name.startswith("ables-postgres-")
     result.unlink(missing_ok=True)
 
+
+
+def test_open_redirect_referrer_is_rejected():
+    from routes import safe_redirect
+
+    with app.test_request_context("/"):
+        response = safe_redirect("https://evil.example.com/steal", "main.contact")
+        assert response.headers["Location"].endswith("/contact")
+
+    with app.test_request_context("/"):
+        response = safe_redirect("//evil.example.com/steal", "main.contact")
+        assert response.headers["Location"].endswith("/contact")
+
+    with app.test_request_context("/"):
+        response = safe_redirect("/care", "main.contact")
+        assert response.headers["Location"] == "/care"
+
+
+def test_public_forms_reject_empty_and_invalid_email():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("invalid-email")
+
+    with app.test_client() as client:
+        empty_contact = client.post("/contact", data={}, follow_redirects=False)
+        assert empty_contact.status_code == 302
+        assert empty_contact.headers["Location"].endswith("/contact")
+
+        bad_email = client.post(
+            "/contact",
+            data={"name": "Bad Email", "email": "not-an-email", "message": "Hello"},
+            follow_redirects=False,
+        )
+        assert bad_email.status_code == 302
+        assert bad_email.headers["Location"].endswith("/contact")
+
+        empty_referral = client.post("/referrals", data={}, follow_redirects=False)
+        assert empty_referral.status_code == 302
+        assert empty_referral.headers["Location"].endswith("/referrals")
+
+    with app.app_context():
+        assert Inquiry.query.filter_by(email="not-an-email").first() is None
+        assert Inquiry.query.filter_by(email=email).first() is None
+
+
+def test_employment_application_requires_consent():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("no-consent")
+
+    with app.test_client() as client:
+        response = client.post(
+            "/employment-application",
+            data={
+                "credential_type": "RN",
+                "name": "No Consent",
+                "email": email,
+                "phone": "301-326-2225",
+                "experience": "Some experience",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/employment-application")
+
+    with app.app_context():
+        assert CaregiverApplication.query.filter_by(email=email).first() is None
+
+
+def test_launch_readiness_is_not_public():
+    with app.test_client() as client:
+        response = client.get("/launch-readiness", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/auth/login" in response.headers["Location"]
+
+
+def test_inactive_user_session_is_rejected():
+    with app.app_context():
+        user, password = create_user("client")
+
+    with app.test_client() as client:
+        assert login(client, user, password).status_code == 302
+        assert client.get("/dashboard").status_code == 200
+
+        with app.app_context():
+            account = db.session.get(User, user.id)
+            account.is_active_account = False
+            db.session.commit()
+
+        # The existing session must stop working once the account is disabled.
+        protected = client.get("/dashboard", follow_redirects=False)
+        assert protected.status_code == 302
+        assert "/auth/login" in protected.headers["Location"]
+
+    with app.app_context():
+        User.query.filter_by(id=user.id).delete()
+        db.session.commit()
