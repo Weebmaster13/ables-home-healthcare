@@ -19,6 +19,32 @@ def configured(value):
     return bool(text) and not any(marker in text for marker in PLACEHOLDER_MARKERS)
 
 
+def database_driver_available(database_uri):
+    """True when the Python driver for the configured database is importable."""
+    import importlib.util
+
+    uri = str(database_uri or "")
+    if uri.startswith(("postgresql://", "postgres://")):
+        return importlib.util.find_spec("psycopg2") is not None
+    if uri.startswith(("mysql://", "mysql+pymysql://", "mariadb://")):
+        return importlib.util.find_spec("pymysql") is not None
+    if uri.startswith("sqlite:///"):
+        return True
+    return True
+
+
+def database_backup_tool_available(database_uri):
+    """True when the host has the dump tool matching the configured database."""
+    import shutil
+
+    uri = str(database_uri or "")
+    if uri.startswith(("postgresql://", "postgres://")):
+        return shutil.which("pg_dump") is not None
+    if uri.startswith(("mysql://", "mysql+pymysql://", "mariadb://")):
+        return shutil.which("mysqldump") is not None or shutil.which("mariadb-dump") is not None
+    return True
+
+
 CHECKS = [
     (
         "Production mode",
@@ -38,7 +64,17 @@ CHECKS = [
     (
         "Production database",
         lambda c: configured(c.get("SQLALCHEMY_DATABASE_URI")) and not c.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite:///"),
-        "Set DATABASE_URL to PostgreSQL before collecting real client data.",
+        "Set DATABASE_URL to PostgreSQL or MySQL/MariaDB before collecting real client data.",
+    ),
+    (
+        "Database driver installed",
+        lambda c: database_driver_available(c.get("SQLALCHEMY_DATABASE_URI", "")),
+        "Install the driver for the configured database (psycopg2-binary for PostgreSQL, PyMySQL for MySQL/MariaDB).",
+    ),
+    (
+        "Database backup tool installed",
+        lambda c: database_backup_tool_available(c.get("SQLALCHEMY_DATABASE_URI", "")),
+        "Install the matching dump tool on the host (pg_dump for PostgreSQL, mysqldump/mariadb-dump for MySQL/MariaDB).",
     ),
     (
         "SMTP email",

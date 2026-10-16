@@ -42,6 +42,13 @@ security fix in `tests/test_core_features.py`.
 - Upload scanning: `security.scan_upload_stream()` reads the WHOLE file and
   streams it to the external scanner (if configured). Do not reintroduce a
   fixed-size sample read.
+- Database backends: PostgreSQL and MySQL/MariaDB are both supported.
+  `config.database_url()` normalizes bare `mysql://` → `mysql+pymysql://`
+  (PyMySQL) and `postgres://` → `postgresql://` (psycopg2). `backup_db.py`
+  dispatches on the URL: `pg_dump` for PostgreSQL, `mysqldump`/`mariadb-dump`
+  for MySQL/MariaDB, SQLite copy only for real SQLite. A server database must
+  NEVER silently fall back to a SQLite file copy — the dump tool is required
+  and a missing tool or failed dump raises (no misleading success).
 - Admin user creation/role changes must validate against `VALID_ROLES`.
 - Public `/healthz` must stay minimal (liveness only). Detailed diagnostics
   belong behind `/admin/healthz`.

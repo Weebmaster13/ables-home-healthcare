@@ -5,13 +5,13 @@
 <div class="page-hero simple-hero">
     <span class="eyebrow">Admin backups</span>
     <h1>Production backups</h1>
-    <p>Create a PostgreSQL or SQLite backup, bundle uploads, and verify the archive. Keep an off-host copy.</p>
+    <p>Create a PostgreSQL, MySQL/MariaDB, or SQLite backup, bundle uploads, and verify the archive. Keep an off-host copy.</p>
 </div>
 
 <section class="portal-help-strip compact mb-4">
     <div>
         <strong>Backup now</strong>
-        <span>This runs <code>pg_dump</code> against the live PostgreSQL database when <code>DATABASE_URL</code> points at PostgreSQL, bundles uploaded files, and verifies the result. On a local SQLite database it copies the SQLite file instead. Copy every backup off-host to durable storage &mdash; the local <code>backups/</code> folder is not a real backup on its own.</span>
+        <span>This dumps the configured database server &mdash; <code>pg_dump</code> for PostgreSQL, <code>mysqldump</code> for MySQL/MariaDB &mdash; bundles uploaded files, and verifies the result. On a local SQLite database it copies the SQLite file instead. If the matching dump tool is missing the backup fails loudly rather than producing a misleading file. Copy every backup off-host to durable storage &mdash; the local <code>backups/</code> folder is not a real backup on its own.</span>
     </div>
     <form method="POST" action="/admin/backups/create">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

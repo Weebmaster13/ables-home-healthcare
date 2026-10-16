@@ -22,6 +22,11 @@ def database_url():
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql://", 1)
 
+    # GoDaddy cPanel MySQL/MariaDB uses the pure-Python PyMySQL driver.
+    # Normalize bare mysql:// URLs so SQLAlchemy selects that dialect.
+    if url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+pymysql://", 1)
+
     return url
 
 
@@ -49,6 +54,9 @@ class Config:
     ).rstrip("/")
     SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Shared hosting (cPanel MySQL/MariaDB) drops idle connections; pre-ping
+    # transparently reconnects. Safe on SQLite and PostgreSQL too.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(BASE_DIR, "instance", "uploads"))
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(5 * 1024 * 1024)))
     PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)

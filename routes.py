@@ -32,7 +32,8 @@ DOCUMENT_CATEGORIES = ["Intake", "Insurance", "Consent", "Care plan", "Medical n
 VALID_ROLES = {"admin", "caregiver", "client"}
 RESUME_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt"}
 RESUME_MIME_TYPES = DOCUMENT_MIME_TYPES | {"text/plain"}
-BACKUP_EXTENSIONS = {".zip", ".db"}
+BACKUP_EXTENSIONS = {".zip", ".db", ".sql"}
+BACKUP_NAME_PREFIXES = ("ablehome-", "ablehome-full-", "ables-postgres-", "ables-mysql-")
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 REMINDER_OFFSETS = {"today": 0, "tomorrow": 1}
 URGENT_KEYWORDS = ["fall", "fell", "chest pain", "stroke", "911", "emergency", "urgent", "not breathing", "bleeding", "hospital"]
@@ -1906,10 +1907,23 @@ def _core_health_ok():
     )
 
 
+def database_backend_name(database_uri):
+    """Classify a SQLAlchemy URL into a coarse backend name."""
+    uri = str(database_uri or "")
+    if uri.startswith("postgresql"):
+        return "postgresql"
+    if uri.startswith("sqlite"):
+        return "sqlite"
+    if uri.startswith(("mysql", "mariadb")):
+        return "mysql"
+    return "other"
+
+
 def _core_health_checks():
     checks = {}
-    database_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
-    checks["database_backend"] = "postgresql" if database_uri.startswith("postgresql") else "sqlite" if database_uri.startswith("sqlite") else "other"
+    checks["database_backend"] = database_backend_name(
+        current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    )
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"] = "ok"
@@ -1918,11 +1932,13 @@ def _core_health_checks():
         checks["database"] = "error"
 
     try:
-        db.session.execute(text("SELECT COUNT(*) FROM \"user\""))
-        db.session.execute(text("SELECT COUNT(*) FROM inquiry"))
-        db.session.execute(text("SELECT COUNT(*) FROM caregiver_application"))
-        db.session.execute(text("SELECT COUNT(*) FROM notification_log"))
-        checks["database_schema"] = "ok"
+        # Inspect table names via SQLAlchemy so identifier quoting is correct
+        # on every backend (PostgreSQL, MySQL/MariaDB, SQLite).
+        from sqlalchemy import inspect
+
+        tables = set(inspect(db.engine).get_table_names())
+        required = {"user", "inquiry", "caregiver_application", "notification_log"}
+        checks["database_schema"] = "ok" if required.issubset(tables) else "error"
     except Exception:
         current_app.logger.exception("Health check database schema failure")
         checks["database_schema"] = "error"
@@ -2608,15 +2624,15 @@ def admin_launch_checklist():
             "href": url_for("main.admin_system_status"),
         },
         {
-            "label": "PostgreSQL active",
-            "ready": health_checks.get("database_backend") == "postgresql",
+            "label": "Server database active",
+            "ready": health_checks.get("database_backend") in ("postgresql", "mysql"),
             "detail": f"Database backend: {health_checks.get('database_backend', 'unknown')}.",
             "href": url_for("main.admin_system_status"),
         },
         {
             "label": "Backups confirmed",
             "ready": len(backups) > 0,
-            "detail": f"{len(backups)} local backup file(s). Also verify Render PostgreSQL backups in Render.",
+            "detail": f"{len(backups)} local backup file(s). Copy them off-host and verify a restore.",
             "href": url_for("main.admin_backups"),
         },
         {
@@ -3041,8 +3057,16 @@ def admin_backups():
 @login_required
 def admin_create_backup():
     require_role("admin")
-    backup_path = create_backup(include_uploads=True)
+    try:
+        backup_path = create_backup(include_uploads=True)
+    except Exception as exc:
+        current_app.logger.exception("Backup creation failed")
+        audit("create_backup_failed", "Backup", None, str(exc)[:200])
+        db.session.commit()
+        flash(f"Backup failed: {exc}", "danger")
+        return redirect(url_for("main.admin_backups"))
     audit("create_backup", "Backup", None, backup_path.name)
+    db.session.commit()
     flash(f"Backup created: {backup_path.name}", "success")
     return redirect(url_for("main.admin_backups"))
 
@@ -3071,7 +3095,7 @@ def admin_delete_backup(filename):
     backup_path = BACKUP_DIR / safe_name
     if (
         Path(safe_name).suffix.lower() not in BACKUP_EXTENSIONS
-        or not safe_name.startswith(("ablehome-", "ablehome-full-"))
+        or not safe_name.startswith(BACKUP_NAME_PREFIXES)
         or not backup_path.is_file()
     ):
         abort(404)
@@ -3089,7 +3113,7 @@ def admin_download_backup(filename):
     safe_name = Path(filename).name
     if (
         Path(safe_name).suffix.lower() not in BACKUP_EXTENSIONS
-        or not safe_name.startswith(("ablehome-", "ablehome-full-"))
+        or not safe_name.startswith(BACKUP_NAME_PREFIXES)
         or not (BACKUP_DIR / safe_name).is_file()
     ):
         abort(404)

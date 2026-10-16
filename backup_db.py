@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import tempfile
 import zipfile
 
 
@@ -16,15 +17,21 @@ def _database_url():
     return os.environ.get("DATABASE_URL", "").strip()
 
 
+def _normalize_url(url):
+    """Normalize legacy bare schemes to the dialects SQLAlchemy expects."""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+pymysql://", 1)
+    return url
+
+
 def _is_postgres(url):
     return url.startswith(("postgresql://", "postgres://"))
 
 
-def _normalized_postgres_url(url):
-    # Some hosts still expose the older Heroku-style postgres:// URL.
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
-    return url
+def _is_mysql(url):
+    return url.startswith(("mysql://", "mysql+pymysql://", "mysql+mysqldb://", "mariadb://"))
 
 
 def _timestamp():
@@ -52,7 +59,7 @@ def create_postgres_backup(include_uploads=True):
     timestamp = _timestamp()
     dump_path = BACKUP_DIR / f"ables-postgres-{timestamp}.dump"
     subprocess.run(
-        ["pg_dump", "--format=custom", "--file", str(dump_path), _normalized_postgres_url(database_url)],
+        ["pg_dump", "--format=custom", "--file", str(dump_path), _normalize_url(database_url)],
         check=True,
     )
 
@@ -65,6 +72,81 @@ def create_postgres_backup(include_uploads=True):
         _write_uploads(archive)
     dump_path.unlink(missing_ok=True)
     return backup_path
+
+
+def _mysql_dump_credentials(url):
+    """Extract MySQL connection parts from a SQLAlchemy URL, if needed."""
+    from urllib.parse import urlsplit, unquote
+
+    parts = urlsplit(url)
+    host = parts.hostname or "localhost"
+    port = parts.port or 3306
+    user = unquote(parts.username) if parts.username else ""
+    password = unquote(parts.password) if parts.password else ""
+    database = (parts.path or "").lstrip("/")
+    return host, port, user, password, database
+
+
+def create_mysql_backup(include_uploads=True):
+    """Back up a live MySQL/MariaDB database with mysqldump.
+
+    Unlike the SQLite path, this never copies a local file: it dumps the
+    configured server. It raises loudly when ``mysqldump`` is missing or the
+    dump fails, so a MySQL production database can never be silently backed up
+    as SQLite. Uploaded files are bundled alongside the dump when requested.
+    """
+    database_url = _database_url()
+    if not _is_mysql(database_url):
+        raise RuntimeError("DATABASE_URL does not point to MySQL/MariaDB.")
+
+    dump_tool = shutil.which("mysqldump") or shutil.which("mariadb-dump")
+    if dump_tool is None:
+        raise RuntimeError(
+            "mysqldump (or mariadb-dump) is required to back up MySQL/MariaDB "
+            "but was not found on PATH. Install the MySQL/MariaDB client tools."
+        )
+
+    host, port, user, password, database = _mysql_dump_credentials(_normalize_url(database_url))
+    if not database:
+        raise RuntimeError("DATABASE_URL does not name a MySQL database.")
+
+    BACKUP_DIR.mkdir(exist_ok=True)
+    timestamp = _timestamp()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dump_path = Path(tmpdir) / "database.sql"
+        command = [
+            dump_tool,
+            "--single-transaction",
+            "--quick",
+            "--host", host,
+            "--port", str(port),
+            "--user", user,
+            "--result-file", str(dump_path),
+            database,
+        ]
+        env = dict(os.environ)
+        if password:
+            # Pass the password via the environment so it never appears in the
+            # process command line (visible to other users via `ps`).
+            env["MYSQL_PWD"] = password
+        result = subprocess.run(command, env=env, capture_output=True, check=False)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or b"mysqldump failed").decode("utf-8", "replace").strip()
+            raise RuntimeError(f"mysqldump failed (exit {result.returncode}): {detail[:300]}")
+        if not dump_path.is_file() or dump_path.stat().st_size == 0:
+            raise RuntimeError("mysqldump produced an empty backup; refusing to report success.")
+
+        if not include_uploads:
+            final_path = BACKUP_DIR / f"ables-mysql-{timestamp}.sql"
+            shutil.copy2(dump_path, final_path)
+            return final_path
+
+        backup_path = BACKUP_DIR / f"ablehome-mysql-{timestamp}.zip"
+        with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.write(dump_path, arcname="database.sql")
+            _write_uploads(archive)
+        return backup_path
 
 
 def create_sqlite_backup(include_uploads=True):
@@ -87,9 +169,18 @@ def create_sqlite_backup(include_uploads=True):
 
 
 def create_backup(include_uploads=True):
-    """Create a backup appropriate for the configured database backend."""
-    if _is_postgres(_database_url()):
+    """Create a backup appropriate for the configured database backend.
+
+    Dispatch is strict: a MySQL/MariaDB URL is dumped with ``mysqldump`` (and
+    fails loudly if that is unavailable), a PostgreSQL URL with ``pg_dump``,
+    and only a real SQLite database falls through to the SQLite file copy. A
+    configured server database is never silently backed up as local SQLite.
+    """
+    url = _database_url()
+    if _is_postgres(url):
         return create_postgres_backup(include_uploads=include_uploads)
+    if _is_mysql(url):
+        return create_mysql_backup(include_uploads=include_uploads)
     return create_sqlite_backup(include_uploads=include_uploads)
 
 
@@ -101,10 +192,11 @@ def cleanup_old_backups(keep=10):
     before relying on this). Retention never removes the newest backup.
     """
     BACKUP_DIR.mkdir(exist_ok=True)
+    prefixes = ("ablehome-", "ablehome-full-", "ables-postgres-", "ables-mysql-")
     backups = sorted(
         [
             path for path in BACKUP_DIR.iterdir()
-            if path.is_file() and (path.name.startswith("ablehome-") or path.name.startswith("ables-postgres-"))
+            if path.is_file() and path.name.startswith(prefixes)
         ],
         key=lambda item: item.stat().st_mtime,
         reverse=True,
@@ -134,15 +226,38 @@ def verify_backup(path):
                 if corrupt:
                     return False, f"Corrupt entry in backup archive: {corrupt}"
                 names = archive.namelist()
-                if "database.dump" not in names and "ablehome.db" not in names:
+                if "database.dump" not in names and "database.sql" not in names and "ablehome.db" not in names:
                     return False, "Backup archive contains no database dump."
                 if "database.dump" in names:
                     ok, message = _verify_pg_dump_member(archive)
                     if not ok:
                         return False, message
+                if "database.sql" in names:
+                    ok, message = _verify_mysql_dump_member(archive)
+                    if not ok:
+                        return False, message
         except zipfile.BadZipFile:
             return False, "Backup archive could not be opened."
+    elif path.suffix == ".sql":
+        if path.stat().st_size == 0:
+            return False, "MySQL dump file is empty."
     return True, "Backup verified as readable."
+
+
+def _verify_mysql_dump_member(archive):
+    """Confirm the bundled MySQL dump is non-empty and structurally a dump.
+
+    mysqldump output always contains SQL statements (and typically a
+    "MySQL dump" header comment); a truncated or empty member is rejected.
+    """
+    info = archive.getinfo("database.sql")
+    if info.file_size == 0:
+        return False, "Bundled MySQL dump is empty."
+    with archive.open("database.sql") as source:
+        head = source.read(4096)
+    if b"INSERT INTO" not in head and b"CREATE TABLE" not in head and b"MySQL dump" not in head:
+        return False, "Bundled MySQL dump does not look like mysqldump output."
+    return True, "Backup verified: archive readable and MySQL dump present."
 
 
 def _verify_pg_dump_member(archive):
@@ -174,8 +289,11 @@ def _verify_pg_dump_member(archive):
 
 
 def main():
-    if _is_postgres(_database_url()):
+    url = _database_url()
+    if _is_postgres(url):
         backup_path = create_postgres_backup(include_uploads=True)
+    elif _is_mysql(url):
+        backup_path = create_mysql_backup(include_uploads=True)
     else:
         backup_path = create_sqlite_backup(include_uploads=True)
 

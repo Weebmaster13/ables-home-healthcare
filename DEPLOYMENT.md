@@ -11,6 +11,23 @@ The live site https://ableshomehealthcare.com runs on a **GoDaddy VPS**
 Railway; those are no longer the production target. Do not configure the app
 against more than one platform at a time.
 
+> **Open question — confirm the database backend before trusting backups.**
+> A separate branch (`cpanel-mysql-port`) documents a GoDaddy **cPanel**
+> deployment using **MySQL/MariaDB** (`DATABASE_URL=mysql+pymysql://…`) via
+> Phusion Passenger, and the domain resolves to GoDaddy. Do **not assume**
+> either backend is live. Confirm it on the real host first:
+>
+> ```bash
+> echo "$DATABASE_URL" | sed -E 's#(://[^:]+:)[^@]+@#\1***@#'   # scheme only
+> flask --app app db check                                      # driver + schema reachable
+> python -c "import production_check as p; print(p.database_driver_available(__import__('config').database_url()), p.database_backup_tool_available(__import__('config').database_url()))"
+> ```
+>
+> The app supports PostgreSQL **and** MySQL/MariaDB: bare `mysql://` URLs are
+> normalized to `mysql+pymysql://`, `PyMySQL` is installed, and backups dispatch
+> to `pg_dump` or `mysqldump` accordingly. Whichever backend the host reports is
+> the one to configure.
+
 ## One deliberate migration strategy
 
 Migrations run **once, as an explicit deploy step**, never automatically on
@@ -30,7 +47,7 @@ This avoids multiple instances racing the same migration at boot.
 ```text
 FLASK_ENV=production
 SECRET_KEY=<long random value>
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME   # or mysql+pymysql://USER:PASSWORD@HOST:3306/DBNAME
 SITE_BASE_URL=https://ableshomehealthcare.com
 UPLOAD_FOLDER=/var/lib/ables/uploads      # persistent, NOT /tmp
 FORCE_HTTPS=true
@@ -86,14 +103,30 @@ Create a backup and verify it is readable:
 python backup_db.py
 ```
 
-This writes a `pg_dump` (custom format, uploads bundled) to `backups/` and
-verifies the archive. **Copy every backup off-host** to durable storage;
-the local `backups/` directory is not a real backup on its own.
+The tool dispatches on `DATABASE_URL`:
+
+- **PostgreSQL** → `pg_dump` (custom format), bundled as
+  `ablehome-full-<timestamp>.zip` containing `database.dump`.
+- **MySQL/MariaDB** → `mysqldump`/`mariadb-dump`, bundled as
+  `ablehome-mysql-<timestamp>.zip` containing `database.sql`.
+- **SQLite** (local dev only) → copies the SQLite file.
+
+A configured server database is **never** silently backed up as local SQLite:
+if the matching dump tool is missing or the dump fails, the command exits
+non-zero (the admin screen shows an error instead of a misleading success).
+Install the matching tool on the host (`pg_dump` or `mysqldump`).
+
+**Copy every backup off-host** to durable storage; the local `backups/`
+directory is not a real backup on its own.
 
 Restore test (run periodically, on a scratch database):
 
 ```bash
-pg_restore --clean --if-exists --dbname "$DATABASE_URL" backups/ables-postgres-<timestamp>.dump
+# PostgreSQL
+pg_restore --clean --if-exists --dbname "$DATABASE_URL" <extracted>/database.dump
+
+# MySQL/MariaDB
+mysql "$DATABASE_URL" < <extracted>/database.sql
 ```
 
 Retention in `backup_db.py` (`cleanup_old_backups`) only deletes **local**

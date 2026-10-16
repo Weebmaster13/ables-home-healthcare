@@ -63,3 +63,16 @@ def test_oracle_env_template_has_placeholders_only():
     text = (ROOT / ".env.oracle.example").read_text()
     assert "REPLACE_" in text
     assert ".env.oracle" in (ROOT / ".gitignore").read_text()
+
+
+def test_requirements_include_both_database_drivers():
+    text = (ROOT / "requirements.txt").read_text()
+    # PostgreSQL (Railway/VPS) and MySQL/MariaDB (cPanel) must both install.
+    assert "psycopg2-binary" in text
+    assert "PyMySQL" in text
+
+
+def test_config_normalizes_mysql_and_postgres_schemes():
+    text = (ROOT / "config.py").read_text()
+    assert "mysql+pymysql://" in text
+    assert "postgresql://" in text
