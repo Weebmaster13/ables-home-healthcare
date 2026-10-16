@@ -16,6 +16,14 @@ import re
 import sys
 from pathlib import Path
 
+# Kept in sync with config.DEVELOPMENT_SECRET_KEYS. Duplicated deliberately:
+# importing config here would run Config's body and raise on the very
+# misconfiguration this script exists to report.
+DEVELOPMENT_SECRET_KEYS = {
+    "dev-secret-change-later",
+    "dev-change-this-before-production",
+}
+
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -47,10 +55,10 @@ def main():
 
     # 3. Secrets and environment (presence/length only)
     secret = os.environ.get("SECRET_KEY", "")
-    if len(secret) >= 32:
-        results.append(("PASS", f"SECRET_KEY present ({len(secret)} chars, value hidden)."))
+    if len(secret) < 32 or secret in DEVELOPMENT_SECRET_KEYS:
+        results.append(("FAIL", "SECRET_KEY missing, shorter than 32 chars, or a development value."))
     else:
-        results.append(("FAIL", "SECRET_KEY missing or shorter than 32 chars."))
+        results.append(("PASS", f"SECRET_KEY present ({len(secret)} chars, value hidden)."))
 
     flask_env = os.environ.get("FLASK_ENV", "")
     db_url = os.environ.get("DATABASE_URL", "")

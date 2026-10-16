@@ -1,10 +1,5 @@
 from app import app
-
-
-DEVELOPMENT_SECRET_KEYS = {
-    "dev-secret-change-later",
-    "dev-change-this-before-production",
-}
+from config import DEVELOPMENT_SECRET_KEYS
 
 PLACEHOLDER_MARKERS = (
     "REPLACE_",

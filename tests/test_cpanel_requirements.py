@@ -1,6 +1,8 @@
 """The cPanel requirements file must cover every third-party import."""
 import ast
+import os
 import pathlib
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -52,3 +54,29 @@ def test_cpanel_requirements_cover_all_runtime_imports():
                 if dist not in provided:
                     missing.add(f"{path.name}:{mod}->{dist}")
     assert not missing, f"imports missing from requirements-cpanel.txt: {sorted(missing)}"
+
+
+def _run_preflight(secret_key):
+    env = dict(os.environ)
+    env["ENV_FILE"] = os.devnull
+    env["FLASK_ENV"] = "production"
+    env["SECRET_KEY"] = secret_key
+    env["DATABASE_URL"] = "mysql+pymysql://u:p@127.0.0.1:3306/db"
+    return subprocess.run(
+        [sys.executable, "preflight_cpanel.py"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_preflight_rejects_development_secret_key():
+    """A 33-char development key must FAIL, not pass on length alone."""
+    result = _run_preflight("dev-change-this-before-production")
+    assert "[FAIL] SECRET_KEY missing, shorter than 32 chars, or a development value." in result.stdout
+
+
+def test_preflight_accepts_strong_secret_key():
+    result = _run_preflight("c" * 48)
+    assert "[PASS] SECRET_KEY present (48 chars, value hidden)." in result.stdout

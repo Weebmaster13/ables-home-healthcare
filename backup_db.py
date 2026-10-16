@@ -34,6 +34,30 @@ def _is_mysql(url):
     return url.startswith(("mysql://", "mysql+pymysql://", "mysql+mysqldb://", "mariadb://"))
 
 
+def _is_sqlite(url):
+    return url.startswith(("sqlite://", "sqlite+pysqlite://"))
+
+
+def _dispatch_backup(url, include_uploads=True):
+    """Choose a backup routine by backend, failing loudly on anything else.
+
+    An empty or unrecognized URL must never silently fall through to a local
+    SQLite file copy: that would report a "backup" of a server database that
+    was never actually dumped.
+    """
+    if _is_postgres(url):
+        return create_postgres_backup(include_uploads=include_uploads)
+    if _is_mysql(url):
+        return create_mysql_backup(include_uploads=include_uploads)
+    if _is_sqlite(url):
+        return create_sqlite_backup(include_uploads=include_uploads)
+    raise RuntimeError(
+        "Unsupported or missing DATABASE_URL for backup: "
+        f"{url or '(empty)'!r}. Set DATABASE_URL to a sqlite, mysql, or "
+        "postgresql URL before backing up."
+    )
+
+
 def _timestamp():
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -173,15 +197,10 @@ def create_backup(include_uploads=True):
 
     Dispatch is strict: a MySQL/MariaDB URL is dumped with ``mysqldump`` (and
     fails loudly if that is unavailable), a PostgreSQL URL with ``pg_dump``,
-    and only a real SQLite database falls through to the SQLite file copy. A
-    configured server database is never silently backed up as local SQLite.
+    a SQLite URL via the SQLite file copy, and anything else (including a
+    missing URL) raises rather than silently backing up as local SQLite.
     """
-    url = _database_url()
-    if _is_postgres(url):
-        return create_postgres_backup(include_uploads=include_uploads)
-    if _is_mysql(url):
-        return create_mysql_backup(include_uploads=include_uploads)
-    return create_sqlite_backup(include_uploads=include_uploads)
+    return _dispatch_backup(_database_url(), include_uploads=include_uploads)
 
 
 def cleanup_old_backups(keep=10):
@@ -289,13 +308,7 @@ def _verify_pg_dump_member(archive):
 
 
 def main():
-    url = _database_url()
-    if _is_postgres(url):
-        backup_path = create_postgres_backup(include_uploads=True)
-    elif _is_mysql(url):
-        backup_path = create_mysql_backup(include_uploads=True)
-    else:
-        backup_path = create_sqlite_backup(include_uploads=True)
+    backup_path = _dispatch_backup(_database_url(), include_uploads=True)
 
     ok, message = verify_backup(backup_path)
     print(f"{'Backup created' if ok else 'Backup FAILED verification'}: {backup_path} ({message})")

@@ -206,6 +206,11 @@ def scan_upload_stream(file_storage):
 
     command = current_app.config.get("VIRUS_SCAN_COMMAND")
     if not command:
+        # Fail closed in production: without an external scanner, client and
+        # caregiver documents would be stored unscanned. The owner can opt in
+        # to the documented risk with UPLOAD_SCAN_FAIL_OPEN=true.
+        if current_app.config.get("PRODUCTION_ENVIRONMENT") and not current_app.config.get("UPLOAD_SCAN_FAIL_OPEN"):
+            return False, "No antivirus scanner configured"
         return True, "No external scanner configured"
 
     # The external scanner receives the complete file on stdin, not a sample,

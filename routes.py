@@ -2041,7 +2041,12 @@ def health_status_data():
 
     return {
         "database_ok": database_ok,
-        "postgresql_configured": not current_app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:///"),
+        "database_backend": database_backend_name(current_app.config["SQLALCHEMY_DATABASE_URI"]),
+        "database_backend_label": {
+            "mysql": "MySQL/MariaDB",
+            "postgresql": "PostgreSQL",
+            "sqlite": "SQLite",
+        }.get(database_backend_name(current_app.config["SQLALCHEMY_DATABASE_URI"]), "Unknown"),
         "smtp_configured": bool(current_app.config.get("MAIL_SERVER")),
         "virus_scanner_configured": bool(current_app.config.get("VIRUS_SCAN_COMMAND")),
         "upload_folder": str(upload_folder),

@@ -77,14 +77,16 @@ def row_dicts(model, connection):
 
 
 def target_counts(target):
+    """Count rows per expected table, failing loudly on any error.
+
+    A missing or inaccessible table must stop the migration, never be
+    reported as an empty (zero-row) table.
+    """
     counts = {}
     for model in TABLES:
-        try:
-            counts[model.__name__] = target.execute(
-                select(func.count()).select_from(model.__table__)
-            ).scalar()
-        except Exception:
-            counts[model.__name__] = 0
+        counts[model.__name__] = target.execute(
+            select(func.count()).select_from(model.__table__)
+        ).scalar()
     return counts
 
 
@@ -127,7 +129,14 @@ def main(argv=None):
         print(f"  [{kind}] {name}")
 
     with target.connect() as connection:
-        existing = target_counts(connection)
+        try:
+            existing = target_counts(connection)
+        except Exception as exc:
+            detail = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+            print("Refusing: target schema is missing or unreadable — run "
+                  "`flask --app app db upgrade` against the target first "
+                  f"({type(exc).__name__}: {detail})")
+            return 2
     nonempty = {name: count for name, count in existing.items() if count}
     if nonempty:
         print("Refusing: target already has rows: " + ", ".join(

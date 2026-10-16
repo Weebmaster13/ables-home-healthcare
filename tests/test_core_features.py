@@ -425,6 +425,26 @@ def test_admin_recovery_code_login_can_be_disabled():
         db.session.commit()
 
 
+def test_system_status_shows_actual_database_backend():
+    """The admin system-status card must name the real backend, not PostgreSQL."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+        response = client.get("/admin/system-status")
+        assert response.status_code == 200
+        # Tests run on SQLite; the label must reflect that, not "PostgreSQL".
+        assert b"SQLite" in response.data
+        assert b"<span>PostgreSQL</span>" not in response.data
+
+    with app.app_context():
+        User.query.filter_by(id=admin.id).delete()
+        db.session.commit()
+
+
 def test_audit_filter_and_export_require_admin_and_return_csv():
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
@@ -920,6 +940,69 @@ def test_external_scanner_receives_complete_file():
             app.config["VIRUS_SCAN_COMMAND"] = original
     # A scanner must see the whole file, not a truncated sample.
     assert clean is True
+
+
+def test_production_without_scanner_rejects_upload():
+    """Fail closed: no scanner in production means the upload is rejected."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = {
+            "VIRUS_SCAN_COMMAND": app.config.get("VIRUS_SCAN_COMMAND"),
+            "PRODUCTION_ENVIRONMENT": app.config.get("PRODUCTION_ENVIRONMENT"),
+            "UPLOAD_SCAN_FAIL_OPEN": app.config.get("UPLOAD_SCAN_FAIL_OPEN"),
+        }
+        app.config["VIRUS_SCAN_COMMAND"] = ""
+        app.config["PRODUCTION_ENVIRONMENT"] = True
+        app.config["UPLOAD_SCAN_FAIL_OPEN"] = False
+        try:
+            file_storage = FileStorage(stream=BytesIO(b"clean pdf bytes"), filename="doc.pdf")
+            clean, message = scan_upload_stream(file_storage)
+        finally:
+            app.config.update(original)
+    assert clean is False
+    assert "scanner" in message.lower()
+
+
+def test_production_owner_can_opt_into_unscanned_uploads():
+    """The documented opt-out lets the owner accept unscanned uploads."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = {
+            "VIRUS_SCAN_COMMAND": app.config.get("VIRUS_SCAN_COMMAND"),
+            "PRODUCTION_ENVIRONMENT": app.config.get("PRODUCTION_ENVIRONMENT"),
+            "UPLOAD_SCAN_FAIL_OPEN": app.config.get("UPLOAD_SCAN_FAIL_OPEN"),
+        }
+        app.config["VIRUS_SCAN_COMMAND"] = ""
+        app.config["PRODUCTION_ENVIRONMENT"] = True
+        app.config["UPLOAD_SCAN_FAIL_OPEN"] = True
+        try:
+            file_storage = FileStorage(stream=BytesIO(b"clean pdf bytes"), filename="doc.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config.update(original)
+    assert clean is True
+
+
+def test_development_without_scanner_still_accepts_upload():
+    """Development keeps working without a scanner configured."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = {
+            "VIRUS_SCAN_COMMAND": app.config.get("VIRUS_SCAN_COMMAND"),
+            "PRODUCTION_ENVIRONMENT": app.config.get("PRODUCTION_ENVIRONMENT"),
+        }
+        app.config["VIRUS_SCAN_COMMAND"] = ""
+        app.config["PRODUCTION_ENVIRONMENT"] = False
+        try:
+            file_storage = FileStorage(stream=BytesIO(b"clean pdf bytes"), filename="doc.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config.update(original)
+    assert clean is True
+
 
 
 def test_csv_export_neutralizes_formula_cells():

@@ -54,7 +54,15 @@ security fix in `tests/test_core_features.py`.
   avoid open redirects.
 - Upload scanning: `security.scan_upload_stream()` reads the WHOLE file and
   streams it to the external scanner (if configured). Do not reintroduce a
-  fixed-size sample read.
+  fixed-size sample read. Without a scanner, production **fails closed**:
+  uploads are rejected unless `UPLOAD_SCAN_FAIL_OPEN=true` is set (a documented
+  owner-approved risk). Development still accepts unscanned uploads.
+- Production startup guards (fail fast, do not weaken): with
+  `FLASK_ENV=production`, `config.database_url()` raises when `DATABASE_URL` is
+  missing and `config.secret_key()` raises on a missing/short/development
+  `SECRET_KEY` (`config.DEVELOPMENT_SECRET_KEYS`). `preflight_cpanel.py` mirrors
+  both as blocking FAILs; it duplicates the dev-key set on purpose so it can
+  report the misconfiguration instead of crashing on it.
 - Database backends: PostgreSQL and MySQL/MariaDB are both supported.
   `config.database_url()` normalizes bare `mysql://` → `mysql+pymysql://`
   (PyMySQL) and `postgres://` → `postgresql://` (psycopg2). `backup_db.py`

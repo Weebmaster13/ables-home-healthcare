@@ -49,6 +49,17 @@ flask --app app db upgrade
 
 This avoids multiple instances racing the same migration at boot.
 
+## Production startup guards (fail fast)
+
+With `FLASK_ENV=production`, the app refuses to boot rather than run insecurely:
+
+- **No `DATABASE_URL`** → `RuntimeError` (never silently falls back to local SQLite).
+- **Missing, short, or development `SECRET_KEY`** → `RuntimeError` (sessions
+  must not be signed with a known key).
+
+Set both correctly before deploying; `python preflight_cpanel.py` reports the
+same conditions as blocking issues.
+
 ## Required environment variables
 
 ```text
@@ -100,7 +111,16 @@ VIRUS_SCAN_COMMAND=clamdscan --stream
 ```
 
 With no scanner configured, uploads only get the EICAR signature check, which
-is not a real antivirus scan.
+is not a real antivirus scan. Because of that, **production fails closed**:
+when `VIRUS_SCAN_COMMAND` is empty, uploads are rejected instead of being
+stored unscanned. To accept unscanned uploads anyway (a documented risk the
+owner must approve), set:
+
+```text
+UPLOAD_SCAN_FAIL_OPEN=true
+```
+
+In development, uploads are still accepted without a scanner.
 
 ## Backups and restore
 

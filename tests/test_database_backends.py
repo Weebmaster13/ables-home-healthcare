@@ -251,3 +251,71 @@ def test_passenger_entrypoint_reexports_wsgi_application():
     assert callable(passenger_wsgi.application)
 
 
+def test_production_with_development_secret_key_fails_fast(monkeypatch):
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "dev-secret-change-later")
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        config.secret_key(production=True)
+
+
+def test_production_with_missing_secret_key_fails_fast(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        config.secret_key(production=True)
+
+
+def test_production_with_short_secret_key_fails_fast(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "too-short")
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        config.secret_key(production=True)
+
+
+def test_production_with_strong_secret_key_is_allowed(monkeypatch):
+    strong = "f" * 64
+    monkeypatch.setenv("SECRET_KEY", strong)
+    assert config.secret_key(production=True) == strong
+
+
+def test_development_uses_fallback_secret_key(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    assert config.secret_key(production=False) == "dev-secret-change-later"
+
+
+def test_create_backup_rejects_empty_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="Unsupported or missing DATABASE_URL"):
+        backup_db.create_backup(include_uploads=False)
+
+
+def test_create_backup_rejects_unsupported_scheme(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "oracle://user:pass@host/db")
+    with pytest.raises(RuntimeError, match="Unsupported or missing DATABASE_URL"):
+        backup_db.create_backup(include_uploads=False)
+
+
+def test_create_backup_uses_sqlite_only_for_sqlite_url(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/x.db")
+    called = {}
+
+    def fake_sqlite(include_uploads=True):
+        called["sqlite"] = True
+        return tmp_path / "fake.zip"
+
+    monkeypatch.setattr(backup_db, "create_sqlite_backup", fake_sqlite)
+    result = backup_db.create_backup(include_uploads=False)
+    assert called.get("sqlite") is True
+    assert result == tmp_path / "fake.zip"
+
+
+def test_migrate_data_target_counts_raises_on_missing_table():
+    """A missing target table must raise, not be reported as zero rows."""
+    import migrate_data
+    from sqlalchemy import create_engine
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as connection:
+        with pytest.raises(Exception):
+            migrate_data.target_counts(connection)
+
+
+
