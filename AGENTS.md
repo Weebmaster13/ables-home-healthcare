@@ -12,8 +12,12 @@ Entry points: `wsgi.py` (production, adds proxy-header handling) and
 ## Run tests
 
 ```bash
-python -m pytest -q          # 71 tests, must stay green
+python -m pytest -q          # must stay green (currently 142 passed, 2 skipped)
 ```
+
+Two live MySQL/MariaDB tests skip unless `MYSQL_TEST_URL` is set; CI runs them
+in the `pytest-mysql` job against a real MariaDB service (see
+`.github/workflows/tests.yml`).
 
 Tests use a temp SQLite DB (see `tests/conftest.py`) and disable CSRF, so many
 workflows are exercised without CSRF enforcement. Add regression tests for any

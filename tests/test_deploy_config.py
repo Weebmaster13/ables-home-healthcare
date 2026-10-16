@@ -181,7 +181,18 @@ def test_requirements_include_both_database_drivers():
     assert "PyMySQL" in text
 
 
-def test_config_normalizes_mysql_and_postgres_schemes():
-    text = (ROOT / "config.py").read_text()
-    assert "mysql+pymysql://" in text
-    assert "postgresql://" in text
+def test_config_normalizes_mysql_and_postgres_schemes(monkeypatch):
+    """Execute config.database_url() rather than grepping config.py.
+
+    The earlier version only asserted the strings appear in the source, which
+    passes even if the normalization branches are dead. This calls the function
+    and checks the URLs it actually returns.
+    """
+    import config
+
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "mysql://user:pass@host:3306/ables")
+    assert config.database_url() == "mysql+pymysql://user:pass@host:3306/ables"
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@host:5432/ables")
+    assert config.database_url() == "postgresql://user:pass@host:5432/ables"
