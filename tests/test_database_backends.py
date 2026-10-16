@@ -528,4 +528,64 @@ def test_migrate_data_target_counts_raises_on_missing_table():
             migrate_data.target_counts(connection)
 
 
+def test_postgres_backup_hands_pg_dump_a_client_parseable_url(monkeypatch, tmp_path):
+    """pg_dump must not receive a SQLAlchemy-only URL.
+
+    ``postgres://`` (Heroku-style) is not understood by every pg_dump build, so
+    the helper must hand over the normalized ``postgresql://`` form. This runs
+    the real ``main()`` and inspects the argv it builds.
+    """
+    import postgres_backup
+
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=False, **kwargs):
+        captured["cmd"] = cmd
+        Path(cmd[cmd.index("--file") + 1]).write_bytes(b"PGDMP fake dump")
+        return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(postgres_backup, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(postgres_backup.shutil, "which", lambda name: "/usr/bin/pg_dump")
+    monkeypatch.setattr(postgres_backup.subprocess, "run", fake_run)
+
+    postgres_backup.main()
+
+    assert captured["cmd"][0] == "pg_dump"
+    assert captured["cmd"][-1] == "postgresql://u:p@dbhost:5432/ables"
+    assert "postgres://u:p@dbhost:5432/ables" != captured["cmd"][-1]
+
+
+def test_postgres_backup_removes_a_truncated_dump_on_failure(monkeypatch, tmp_path):
+    """A failed pg_dump must not leave a zero-byte file that looks like a backup."""
+    import postgres_backup
+
+    def fake_run(cmd, capture_output=True, check=False, **kwargs):
+        # Simulate pg_dump creating the file then failing.
+        Path(cmd[cmd.index("--file") + 1]).write_bytes(b"")
+        return backup_db.subprocess.CompletedProcess(cmd, 1, b"", b"connection refused")
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(postgres_backup, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(postgres_backup.shutil, "which", lambda name: "/usr/bin/pg_dump")
+    monkeypatch.setattr(postgres_backup.subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit, match="pg_dump failed"):
+        postgres_backup.main()
+    assert list(tmp_path.iterdir()) == [], "truncated dump was left behind"
+
+
+def test_postgres_backup_requires_pg_dump_on_path(monkeypatch, tmp_path):
+    """Missing pg_dump must be reported clearly, not raise FileNotFoundError."""
+    import postgres_backup
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(postgres_backup, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(postgres_backup.shutil, "which", lambda name: None)
+
+    with pytest.raises(SystemExit, match="pg_dump is required"):
+        postgres_backup.main()
+
+
+
 
