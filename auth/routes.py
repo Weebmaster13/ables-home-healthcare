@@ -12,6 +12,7 @@ from security import (
     clear_login_failures,
     clear_user_login_failures,
     commit_or_flash_failure,
+    commit_quietly,
     login_is_limited,
     password_feedback,
     password_fingerprint,
@@ -127,7 +128,7 @@ def login():
             record_login_failure()
             record_user_login_failure(user)
             audit("login_failure", "User", user.id, "Failed password attempt")
-            db.session.commit()
+            commit_quietly()
             flash("Invalid email or password.", "danger")
             return redirect(url_for("auth.login"))
 
@@ -136,14 +137,14 @@ def login():
             record_login_failure()
             record_user_login_failure(user)
             audit("admin_recovery_code_failure", "User", user.id, "Missing or invalid admin recovery code")
-            db.session.commit()
+            commit_quietly()
             flash("Enter a valid admin recovery code.", "danger")
             return redirect(url_for("auth.login"))
 
         clear_login_failures()
         clear_user_login_failures(user)
         audit("login_success", "User", user.id, "Successful login")
-        db.session.commit()
+        commit_quietly()
         session.permanent = True
         login_user(user)
         session["_pw_fp"] = password_fingerprint(user)
@@ -165,7 +166,7 @@ def login():
 @login_required
 def logout():
     audit("logout", "User", current_user.id, "User logged out")
-    db.session.commit()
+    commit_quietly()
 
     logout_user()
 

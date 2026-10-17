@@ -353,6 +353,22 @@ def commit_or_flash_failure(message=None):
         return False
 
 
+def commit_quietly():
+    """Commit, or roll back and log without changing the user-facing response.
+
+    Use where a database failure must not alter the security response (for
+    example, a login failure or an audit write): the caller keeps its intended
+    message instead of leaking a 500 or a different hint.
+    """
+    try:
+        db.session.commit()
+        return True
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Could not commit transaction")
+        return False
+
+
 def public_form_is_limited(scope):
     """Throttle repeated public form submissions from one client.
 
