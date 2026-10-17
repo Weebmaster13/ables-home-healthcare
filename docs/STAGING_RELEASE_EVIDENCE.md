@@ -5,9 +5,11 @@ the exact configuration each owner-controlled check needs, how to re-run every
 check, how to roll back, and the blockers that remain. Nothing here has been
 merged or deployed. Merge and deploy require the owner's explicit approval.
 
-Verified commit: `repair/security-audit-2026-10` at the commit that adds this
-file. Confirm with `git rev-parse HEAD` and compare against the release target
-before merging (see "Confirm the tested commit is the release commit").
+Verified commit: `de464a7` on `repair/security-audit-2026-10`. The full suite
+and the live CI drills (`pytest`, `pytest-mysql`, `pytest-postgres`) passed on
+this commit, and the staging harness passed 15/15 against the running stack.
+Confirm with `git rev-parse HEAD` and compare against the release target before
+merging (see "Confirm the tested commit is the release commit").
 
 ## What the staging stack was
 
