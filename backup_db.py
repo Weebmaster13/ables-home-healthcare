@@ -233,6 +233,26 @@ def _postgres_dump_credentials(url):
     return host, port, user, password, database
 
 
+_PG_RESTORE_WARNING_MARKER = "errors ignored on restore"
+
+
+def _pg_restore_outcome(returncode, stderr, stdout):
+    """Classify a pg_restore run into (ok, detail).
+
+    pg_restore exits 1 when it ignored one or more non-fatal errors, for
+    example a GUC that a newer pg_dump wrote but an older server does not
+    recognise. The data still loads, so that specific case is success. Any
+    other non-zero exit, or exit 1 without the ignored-errors marker, is a
+    real failure.
+    """
+    if returncode == 0:
+        return True, ""
+    detail = (stderr or stdout or b"").decode("utf-8", "replace").strip()
+    if returncode == 1 and _PG_RESTORE_WARNING_MARKER in detail:
+        return True, detail
+    return False, detail
+
+
 def restore_postgres_dump(dump_path, target_url, allow_live=False):
     """Load a custom-format ``pg_dump`` file into ``target_url``.
 
@@ -289,9 +309,16 @@ def restore_postgres_dump(dump_path, target_url, allow_live=False):
     if password:
         env["PGPASSWORD"] = password
     result = subprocess.run(command + [str(dump_path)], env=env, capture_output=True, check=False)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or b"restore failed").decode("utf-8", "replace").strip()
+    ok, detail = _pg_restore_outcome(result.returncode, result.stderr, result.stdout)
+    if not ok:
         raise RuntimeError(f"Restore failed (exit {result.returncode}): {detail[:300]}")
+    if detail:
+        # Non-fatal errors were ignored (for example a version-skew GUC); the
+        # data loaded, so report success but surface what was skipped.
+        return True, (
+            f"Restored {dump_path.name} into {database} "
+            f"({_PG_RESTORE_WARNING_MARKER}: {detail.splitlines()[0][:120]})."
+        )
     return True, f"Restored {dump_path.name} into {database}."
 
 

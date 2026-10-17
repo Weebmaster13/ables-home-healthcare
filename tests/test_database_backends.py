@@ -173,6 +173,51 @@ def test_postgres_restore_passes_password_via_env_not_argv(monkeypatch, tmp_path
     assert str(dump) in captured["cmd"]
 
 
+def test_postgres_restore_treats_ignored_errors_as_success(monkeypatch, tmp_path):
+    """pg_restore exits 1 for ignored non-fatal errors (e.g. a version-skew
+    GUC) even though the data loads. That must be reported as success, not as
+    a failed recovery drill."""
+    def fake_run(cmd, env=None, capture_output=True, check=False):
+        return backup_db.subprocess.CompletedProcess(
+            cmd, 1, b"",
+            b'pg_restore: error: could not execute query: ERROR:  '
+            b'unrecognized configuration parameter "transaction_timeout"\n'
+            b'pg_restore: warning: errors ignored on restore: 1\n',
+        )
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+
+    ok, message = backup_db.restore_postgres_dump(
+        dump, "postgresql://u:p@dbhost:5432/ables_restore"
+    )
+
+    assert ok is True
+    assert "errors ignored" in message
+
+
+def test_postgres_restore_still_raises_on_a_real_failure(monkeypatch, tmp_path):
+    """Exit 1 without the ignored-errors marker is a genuine failure."""
+    def fake_run(cmd, env=None, capture_output=True, check=False):
+        return backup_db.subprocess.CompletedProcess(
+            cmd, 1, b"", b"pg_restore: error: connection to server failed\n"
+        )
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="Restore failed"):
+        backup_db.restore_postgres_dump(
+            dump, "postgresql://u:p@dbhost:5432/ables_restore"
+        )
+
+
 def test_postgres_restore_raises_when_pg_restore_missing(monkeypatch, tmp_path):
     dump = tmp_path / "database.dump"
     dump.write_bytes(b"PGDMP fake")
