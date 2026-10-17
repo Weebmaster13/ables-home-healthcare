@@ -8,6 +8,7 @@ MariaDB/MySQL URL is provided via ``MYSQL_TEST_URL``.
 """
 import os
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -513,6 +514,23 @@ def test_live_postgres_backup_and_restore_round_trip():
     parts = urlsplit(url)
     admin_url = urlunsplit((parts.scheme, parts.netloc, "/postgres", "", ""))
     admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+
+    # pg_dump cannot dump a server newer than itself and pg_restore can reject
+    # output written by a newer client, so a mismatched major would fail with a
+    # confusing client error. Skip with a clear reason instead; CI pins the
+    # service to the runner's client major so the drill does run there.
+    client_major = int(
+        subprocess.check_output(["pg_dump", "--version"]).split()[2].split(b".")[0]
+    )
+    with admin.connect() as conn:
+        server_version = conn.execute(text("SHOW server_version")).scalar()
+    server_major = int(str(server_version).split(".")[0])
+    if client_major != server_major:
+        admin.dispose()
+        pytest.skip(
+            f"pg_dump client major {client_major} != server major {server_major}; "
+            "live PostgreSQL drill needs matching majors"
+        )
 
     def _recreate(name):
         with admin.connect() as conn:

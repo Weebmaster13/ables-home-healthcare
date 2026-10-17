@@ -72,14 +72,15 @@ jobs:
   # Runs the live PostgreSQL restore drill against a real server, so the
   # documented `backup_db.py --restore-to` path for PostgreSQL is verified
   # reproducibly. Without POSTGRES_TEST_URL that test skips, which is why this
-  # job sets it. The client tools come from the runner image; the pinned
-  # postgres:17 service keeps pg_dump/pg_restore major versions compatible.
+  # job sets it. pg_dump refuses to dump a server newer than itself, and the
+  # ubuntu-latest image ships the v16 client, so the service is pinned to
+  # postgres:16 to keep the client and server majors aligned.
   pytest-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17
+        image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: ables_test
@@ -111,4 +112,12 @@ jobs:
       - name: Run the suite with the live PostgreSQL drill enabled
         env:
           POSTGRES_TEST_URL: "postgresql://postgres:postgres@127.0.0.1:5432/ables_test"
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q -rs 2>&1 | tee /tmp/pytest-postgres.log
+          # Guard against the drill silently skipping (e.g. a future runner
+          # image shipping a pg_dump major that no longer matches the service).
+          if grep -q "live PostgreSQL drill skipped" /tmp/pytest-postgres.log; then
+            echo "::error::the live PostgreSQL drill skipped instead of running"
+            exit 1
+          fi
