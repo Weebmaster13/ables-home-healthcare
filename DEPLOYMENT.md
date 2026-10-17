@@ -178,6 +178,18 @@ one guarded command — it refuses to target the live `DATABASE_URL`:
 python backup_db.py --restore-to "$SCRATCH_DATABASE_URL"
 ```
 
+This works for both backends: it dispatches to `pg_restore` for a
+PostgreSQL dump and to `mysql`/`mariadb` for a MySQL dump, and it refuses to
+target the live database unless `--allow-live` is passed.
+
+> **Match the client and server major versions.** `pg_dump` output can only be
+> restored into a server of the same or a newer major version. A `pg_dump`
+> from PostgreSQL 17 emits `SET transaction_timeout`, which a 16 server
+> rejects. Install the `pg_dump`/`pg_restore` client matching the server, or
+> take the dump with `--no-synchronized-snapshots`-style compatibility in mind.
+> A restore that aborts on such a `SET` line means the client is newer than the
+> server — install the matching client rather than ignoring the error.
+
 Retention in `backup_db.py` (`cleanup_old_backups`) only deletes **local**
 copies and never the newest one — use it only after off-host copies exist.
 

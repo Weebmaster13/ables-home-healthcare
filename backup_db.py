@@ -220,6 +220,81 @@ def client_url(url):
     return urlunsplit((scheme, parts.netloc, parts.path, parts.query, parts.fragment))
 
 
+def _postgres_dump_credentials(url):
+    """Extract PostgreSQL connection parts from a SQLAlchemy URL."""
+    from urllib.parse import urlsplit, unquote
+
+    parts = urlsplit(url)
+    host = parts.hostname or "localhost"
+    port = parts.port or 5432
+    user = unquote(parts.username) if parts.username else ""
+    password = unquote(parts.password) if parts.password else ""
+    database = (parts.path or "").lstrip("/")
+    return host, port, user, password, database
+
+
+def restore_postgres_dump(dump_path, target_url, allow_live=False):
+    """Load a custom-format ``pg_dump`` file into ``target_url``.
+
+    Connection details are passed as explicit flags with the password in
+    ``PGPASSWORD`` so it never reaches the process list, matching the MySQL
+    helper. Refuses to target the database named by ``DATABASE_URL`` unless
+    ``allow_live`` is set, so a restore drill cannot overwrite production by
+    accident. Raises loudly when ``pg_restore`` is missing.
+    """
+    target_url = _normalize_url(target_url)
+    if not _is_postgres(target_url):
+        raise RuntimeError("Restore target must be a PostgreSQL URL.")
+
+    host, port, user, password, database = _postgres_dump_credentials(target_url)
+    if not database:
+        raise RuntimeError("Restore target URL does not name a database.")
+
+    live_url = _database_url()
+    if _is_postgres(live_url):
+        live_database = _postgres_dump_credentials(_normalize_url(live_url))[4]
+        if live_database and database == live_database and not allow_live:
+            raise RuntimeError(
+                f"Refusing to restore into {database!r}: it is the live "
+                "DATABASE_URL. Restore into a separate scratch database, or "
+                "pass allow_live=True only if you truly mean to overwrite it."
+            )
+
+    client = shutil.which("pg_restore")
+    if client is None:
+        raise RuntimeError(
+            "pg_restore is required to restore a PostgreSQL dump but was not "
+            "found on PATH."
+        )
+
+    dump_path = Path(dump_path)
+    if not dump_path.is_file() or dump_path.stat().st_size == 0:
+        raise RuntimeError(f"Restore source is missing or empty: {dump_path}")
+
+    command = [
+        client,
+        "--clean",
+        "--if-exists",
+        # The scratch database may not have the source's roles; skip ownership
+        # and privilege replay so the data itself restores cleanly.
+        "--no-owner",
+        "--no-privileges",
+        "--host", host,
+        "--port", str(port),
+        "--dbname", database,
+    ]
+    if user:
+        command += ["--username", user]
+    env = dict(os.environ)
+    if password:
+        env["PGPASSWORD"] = password
+    result = subprocess.run(command + [str(dump_path)], env=env, capture_output=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or b"restore failed").decode("utf-8", "replace").strip()
+        raise RuntimeError(f"Restore failed (exit {result.returncode}): {detail[:300]}")
+    return True, f"Restored {dump_path.name} into {database}."
+
+
 def restore_mysql_dump(dump_path, target_url, allow_live=False):
     """Load a mysqldump file into ``target_url`` with the native client.
 
@@ -444,13 +519,23 @@ def main(argv=None):
             if str(backup_path).endswith(".zip"):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     with zipfile.ZipFile(backup_path) as archive:
-                        if "database.sql" not in archive.namelist():
-                            print("Backup archive has no database.sql member; cannot restore.")
+                        members = archive.namelist()
+                        if "database.sql" in members:
+                            member = "database.sql"
+                            restore = restore_mysql_dump
+                        elif "database.dump" in members:
+                            member = "database.dump"
+                            restore = restore_postgres_dump
+                        else:
+                            print("Backup archive has no database dump member; cannot restore.")
                             raise SystemExit(1)
-                        archive.extract("database.sql", tmpdir)
-                    dump_path = Path(tmpdir) / "database.sql"
-                    _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
+                        archive.extract(member, tmpdir)
+                    dump_path = Path(tmpdir) / member
+                    _, restored = restore(dump_path, args.restore_to, allow_live=args.allow_live)
                     print(restored)
+            elif backup_path.suffix == ".dump" or _is_postgres(_database_url()):
+                _, restored = restore_postgres_dump(dump_path, args.restore_to, allow_live=args.allow_live)
+                print(restored)
             else:
                 _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
                 print(restored)

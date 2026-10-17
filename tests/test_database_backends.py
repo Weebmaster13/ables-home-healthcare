@@ -7,6 +7,7 @@ tests (connection and a full backup/restore round trip) skip unless a
 MariaDB/MySQL URL is provided via ``MYSQL_TEST_URL``.
 """
 import os
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -132,6 +133,93 @@ def test_restore_raises_on_empty_dump(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError, match="missing or empty"):
         backup_db.restore_mysql_dump(dump, "mysql+pymysql://u:p@dbhost:3306/scratch")
+
+
+def test_postgres_restore_refuses_to_target_the_live_database(monkeypatch, tmp_path):
+    """The PostgreSQL drill must not be able to overwrite production either."""
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
+
+    with pytest.raises(RuntimeError, match="Refusing to restore"):
+        backup_db.restore_postgres_dump(dump, "postgres://u:p@dbhost:5432/ables")
+
+
+def test_postgres_restore_passes_password_via_env_not_argv(monkeypatch, tmp_path):
+    """pg_restore must get PGPASSWORD in the environment, not on the command line."""
+    captured = {}
+
+    def fake_run(cmd, env=None, capture_output=True, check=False):
+        captured["cmd"] = cmd
+        captured["env"] = env
+        return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:livepw@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+
+    ok, message = backup_db.restore_postgres_dump(
+        dump, "postgresql://restorer:scratchpw@dbhost:5432/ables_restore"
+    )
+
+    assert ok is True
+    assert "scratchpw" not in " ".join(captured["cmd"])
+    assert captured["env"]["PGPASSWORD"] == "scratchpw"
+    assert "ables_restore" in captured["cmd"]
+    assert str(dump) in captured["cmd"]
+
+
+def test_postgres_restore_raises_when_pg_restore_missing(monkeypatch, tmp_path):
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: None)
+
+    with pytest.raises(RuntimeError, match="pg_restore"):
+        backup_db.restore_postgres_dump(dump, "postgresql://u:p@dbhost:5432/scratch")
+
+
+def test_postgres_restore_raises_on_empty_dump(monkeypatch, tmp_path):
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
+
+    with pytest.raises(RuntimeError, match="missing or empty"):
+        backup_db.restore_postgres_dump(dump, "postgresql://u:p@dbhost:5432/scratch")
+
+
+def test_restore_to_dispatch_handles_a_postgres_bundle(monkeypatch, tmp_path):
+    """`backup_db.py --restore-to` must pick pg_restore for a postgres bundle.
+
+    The documented drill was MySQL-only before: a PostgreSQL URL reached
+    restore_mysql_dump and failed with "target must be a MySQL/MariaDB URL".
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db, "BACKUP_DIR", tmp_path)
+
+    def fake_dispatch(url, include_uploads=True):
+        bundle = tmp_path / "ablehome-full-test.zip"
+        with zipfile.ZipFile(bundle, "w") as archive:
+            archive.writestr("database.dump", b"PGDMP fake")
+        return bundle
+
+    calls = {}
+
+    def fake_pg_restore(dump_path, target_url, allow_live=False):
+        calls["restored"] = Path(dump_path).name
+        return True, "Restored database.dump into ables_restore."
+
+    monkeypatch.setattr(backup_db, "_dispatch_backup", fake_dispatch)
+    monkeypatch.setattr(backup_db, "verify_backup", lambda path: (True, "verified"))
+    monkeypatch.setattr(backup_db, "restore_postgres_dump", fake_pg_restore)
+
+    backup_db.main(["--restore-to", "postgresql://u:p@dbhost:5432/ables_restore"])
+
+    assert calls["restored"] == "database.dump"
 
 
 def test_dump_flags_skip_column_statistics_for_mariadb_client(monkeypatch):
@@ -396,6 +484,76 @@ def test_live_backup_and_restore_round_trip():
         finally:
             os.environ.pop("DATABASE_URL", None)
     finally:
+        with admin.connect() as conn:
+            conn.execute(text(f"DROP DATABASE IF EXISTS {source_db}"))
+            conn.execute(text(f"DROP DATABASE IF EXISTS {scratch_db}"))
+
+
+def test_live_postgres_backup_and_restore_round_trip():
+    """Same drill as the MySQL one, for PostgreSQL.
+
+    The MySQL path had a live round trip but PostgreSQL only had mocked tests,
+    so the documented PostgreSQL restore was never actually executed. Skipped
+    unless ``POSTGRES_TEST_URL`` names a reachable server; the scratch database
+    is created and dropped by the test. The client and server must be the same
+    major version, as pg_dump refuses to restore newer output into older
+    servers.
+    """
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        pytest.skip("POSTGRES_TEST_URL not set; live PostgreSQL drill skipped")
+    if shutil.which("pg_dump") is None or shutil.which("pg_restore") is None:
+        pytest.skip("pg_dump/pg_restore not installed; live PostgreSQL drill skipped")
+
+    from sqlalchemy import create_engine, text
+    from urllib.parse import urlsplit, urlunsplit
+
+    source_db = "ables_pg_drill_source"
+    scratch_db = "ables_pg_drill_restore"
+    parts = urlsplit(url)
+    admin_url = urlunsplit((parts.scheme, parts.netloc, "/postgres", "", ""))
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+
+    def _recreate(name):
+        with admin.connect() as conn:
+            conn.execute(text(f"DROP DATABASE IF EXISTS {name}"))
+            conn.execute(text(f"CREATE DATABASE {name}"))
+
+    _recreate(source_db)
+    _recreate(scratch_db)
+    source_url = urlunsplit((parts.scheme, parts.netloc, "/" + source_db, "", ""))
+    scratch_url = urlunsplit((parts.scheme, parts.netloc, "/" + scratch_db, "", ""))
+    source = create_engine(source_url)
+    scratch = create_engine(scratch_url)
+    try:
+        with source.begin() as conn:
+            conn.execute(text("CREATE TABLE patients (id INT PRIMARY KEY, name VARCHAR(50))"))
+            conn.execute(text("INSERT INTO patients VALUES (1, 'Ada'), (2, 'Grace')"))
+
+        os.environ["DATABASE_URL"] = source_url
+        try:
+            backup_path = backup_db.create_backup(include_uploads=False)
+            try:
+                ok, message = backup_db.verify_backup(backup_path)
+                assert ok is True, message
+
+                with pytest.raises(RuntimeError, match="Refusing to restore"):
+                    backup_db.restore_postgres_dump(backup_path, source_url)
+
+                restored, _ = backup_db.restore_postgres_dump(backup_path, scratch_url)
+                assert restored is True
+
+                with scratch.connect() as conn:
+                    rows = conn.execute(text("SELECT id, name FROM patients ORDER BY id")).fetchall()
+                assert rows == [(1, "Ada"), (2, "Grace")]
+            finally:
+                backup_path.unlink(missing_ok=True)
+        finally:
+            os.environ.pop("DATABASE_URL", None)
+    finally:
+        # Release pooled connections; DROP DATABASE fails while any remain open.
+        source.dispose()
+        scratch.dispose()
         with admin.connect() as conn:
             conn.execute(text(f"DROP DATABASE IF EXISTS {source_db}"))
             conn.execute(text(f"DROP DATABASE IF EXISTS {scratch_db}"))
