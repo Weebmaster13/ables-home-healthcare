@@ -1725,5 +1725,35 @@ def test_public_form_commit_failure_rolls_back_the_session(monkeypatch):
     assert rolled_back["called"] is True
 
 
+def test_register_commit_failure_returns_clean_error(monkeypatch):
+    """Registration must not leak a 500 when the account cannot be saved."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("register-fail")
+
+    def failing_commit():
+        raise RuntimeError("simulated database failure")
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+    try:
+        with app.test_client() as client:
+            response = client.post(
+                "/auth/register",
+                data={
+                    "name": "Registration Failure",
+                    "email": email,
+                    "password": "SafePass2026!",
+                    "confirm_password": "SafePass2026!",
+                },
+                follow_redirects=False,
+            )
+    finally:
+        monkeypatch.undo()
+
+    assert response.status_code < 500
+    assert response.status_code == 302
+    with app.app_context():
+        assert User.query.filter_by(email=email).first() is None
+
+
 
 

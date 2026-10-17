@@ -11,6 +11,7 @@ from security import (
     audit,
     clear_login_failures,
     clear_user_login_failures,
+    commit_or_flash_failure,
     login_is_limited,
     password_feedback,
     password_fingerprint,
@@ -75,7 +76,8 @@ def register():
         )
 
         db.session.add(user)
-        db.session.commit()
+        if not commit_or_flash_failure():
+            return redirect(url_for("auth.register"))
 
         flash("Account created successfully.", "success")
 
@@ -234,7 +236,14 @@ def forgot_password():
                 related_id=user.id,
             )
             audit("password_reset_requested", "User", user.id, f"Delivery status: {'sent' if sent else 'not sent'}")
-            db.session.commit()
+            # Roll back silently on failure: flashing a database error only when
+            # the account exists would leak account existence through the
+            # generic "if that account exists" response.
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Could not record password reset request")
 
             if not sent and not current_app.config.get("SESSION_COOKIE_SECURE"):
                 session["dev_password_reset_url"] = reset_url
@@ -293,7 +302,10 @@ def reset_password(token):
         user.password = generate_password_hash(password)
         user.password_changed_at = db.func.now()
         clear_user_login_failures(user)
-        db.session.commit()
+        if not commit_or_flash_failure(
+            "We could not update your password because of a temporary problem. Please try again."
+        ):
+            return redirect(url_for("auth.reset_password", token=token))
 
         flash("Password updated. Please log in.", "success")
         return redirect(url_for("auth.login"))

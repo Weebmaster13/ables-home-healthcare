@@ -4,7 +4,7 @@ import re
 import secrets
 import subprocess
 
-from flask import abort, current_app, request
+from flask import abort, current_app, flash, request
 from flask_login import current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -326,6 +326,31 @@ def record_user_login_failure(user):
         lockout_minutes = current_app.config.get("ACCOUNT_LOCKOUT_MINUTES", 15)
         user.locked_until = utc_now() + timedelta(minutes=lockout_minutes)
         audit("account_locked", "User", user.id, f"Locked after {user.failed_login_count} failed attempts")
+
+
+def commit_or_flash_failure(message=None):
+    """Commit the current transaction, or roll back and flash a clear error.
+
+    Returns True when the write succeeded and False when it failed. A failed
+    write must not surface as an unhandled 500: the visitor gets an actionable
+    message and the transaction is rolled back so no partial record is left
+    behind.
+    """
+    try:
+        db.session.commit()
+        return True
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Could not save public form submission")
+        flash(
+            message
+            or (
+                "We could not save your submission because of a temporary problem. "
+                "Please try again or call the office at 301-455-3030."
+            ),
+            "danger",
+        )
+        return False
 
 
 def public_form_is_limited(scope):

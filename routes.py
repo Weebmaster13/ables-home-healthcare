@@ -15,7 +15,7 @@ from sqlalchemy import and_, or_, text, true
 from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
-from security import audit, generate_recovery_codes, password_feedback, password_is_breached, password_is_strong, read_upload_head, reject_public_submission, require_permission, require_role, scan_upload_stream
+from security import audit, commit_or_flash_failure, generate_recovery_codes, password_feedback, password_is_breached, password_is_strong, read_upload_head, reject_public_submission, require_permission, require_role, scan_upload_stream
 from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup
 
 # ---------------- MAIN BLUEPRINT ----------------
@@ -1182,28 +1182,6 @@ def service_areas():
 @main_bp.route("/care-process")
 def care_process():
     return render_template("care_process.html", consultation_steps=CONSULTATION_STEPS)
-
-
-def commit_or_flash_failure():
-    """Commit the current transaction, or roll back and flash a clear error.
-
-    Returns True when the write succeeded and False when it failed. A failed
-    public form submission must not surface as an unhandled 500: the visitor
-    gets an actionable message and the transaction is rolled back so no partial
-    record is left behind.
-    """
-    try:
-        db.session.commit()
-        return True
-    except Exception:
-        db.session.rollback()
-        current_app.logger.exception("Could not save public form submission")
-        flash(
-            "We could not save your submission because of a temporary problem. "
-            "Please try again or call the office at 301-455-3030.",
-            "danger",
-        )
-        return False
 
 
 def create_consultation_inquiry(reason="Scheduled consultation"):
