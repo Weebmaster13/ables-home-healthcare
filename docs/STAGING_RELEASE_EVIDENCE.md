@@ -12,12 +12,13 @@ the release target before merging (see "Confirm the tested commit is the release
 commit"). If HEAD differs in code, re-run the suite and the harness before
 merging.
 
-Last verified head: `c2dc1dd` ("Verify restored schema objects and row counts,
-not just table existence"). At that commit: the full suite passed (187 passed
-with the live PostgreSQL and MySQL drills enabled; 183 passed, 4 skipped without
-them), and all three CI jobs (`pytest`, `pytest-mysql`, `pytest-postgres`) were
-green. The restore drills were also run directly against real servers, including
-a PostgreSQL 17 dump restored into a PostgreSQL 16 server.
+Last verified head: `7780769` ("Verify restored content, not just row counts, via a
+backup fingerprint"). At that commit: the full suite passed (195 passed with the
+live PostgreSQL and MySQL drills enabled; 191 passed, 4 skipped without them),
+and all three CI jobs (`pytest`, `pytest-mysql`, `pytest-postgres`) were green.
+The restore drills were also run directly against real servers, including a
+PostgreSQL 17 dump restored into a PostgreSQL 16 server and a simulated disaster
+(the source database dropped, restore verified from the stored archive).
 
 ## What the staging stack was
 
