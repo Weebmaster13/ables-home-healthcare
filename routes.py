@@ -16,7 +16,7 @@ from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
 from security import audit, commit_or_flash_failure, generate_recovery_codes, password_feedback, password_is_breached, password_is_strong, read_upload_head, reject_public_submission, require_permission, require_role, scan_upload_stream
-from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup
+from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup, list_backups
 
 # ---------------- MAIN BLUEPRINT ----------------
 main_bp = Blueprint("main", __name__)
@@ -2577,7 +2577,7 @@ def admin_system_status():
     skipped_notifications = NotificationLog.query.filter_by(status="skipped").order_by(NotificationLog.created_at.desc()).limit(10).all()
     failed_logins = AuditLog.query.filter(AuditLog.action.in_(["login_failure", "admin_recovery_code_failure", "account_locked"])).order_by(AuditLog.created_at.desc()).limit(10).all()
     BACKUP_DIR.mkdir(exist_ok=True)
-    backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
+    backups = list_backups(BACKUP_DIR)
     log_path = Path(current_app.instance_path) / "logs" / "app.log"
     migration_version = current_migration_revision() or "Unavailable"
     latest_revision = latest_migration_revision()
@@ -2671,7 +2671,7 @@ def admin_launch_checklist():
 def admin_maintenance():
     require_permission("admin:reports")
     BACKUP_DIR.mkdir(exist_ok=True)
-    backups = sorted([path for path in BACKUP_DIR.iterdir() if path.is_file()], key=lambda path: path.stat().st_mtime, reverse=True)
+    backups = list_backups(BACKUP_DIR)
     log_path = Path(current_app.instance_path) / "logs" / "app.log"
     deploy_items = [
         ("PostgreSQL", not current_app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:///")),
@@ -2743,7 +2743,7 @@ def admin_retention():
         "notifications": NotificationLog.query.count(),
         "closed_messages": PortalMessage.query.filter_by(status="closed").count(),
         "audit_logs": AuditLog.query.count(),
-        "backups": len([path for path in BACKUP_DIR.iterdir() if path.is_file()]) if BACKUP_DIR.exists() else 0,
+        "backups": len(list_backups(BACKUP_DIR)),
     }
     return render_template("admin/retention.html", counts=counts, removed_count=removed_count, user=current_user)
 
@@ -3055,11 +3055,7 @@ def admin_send_reminders(label):
 def admin_backups():
     require_role("admin")
     BACKUP_DIR.mkdir(exist_ok=True)
-    backups = sorted(
-        [path for path in BACKUP_DIR.iterdir() if path.is_file()],
-        key=lambda item: item.stat().st_mtime,
-        reverse=True,
-    )
+    backups = list_backups(BACKUP_DIR)
     return render_template("admin/backups.html", backups=backups, user=current_user)
 
 

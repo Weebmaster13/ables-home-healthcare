@@ -1182,6 +1182,12 @@ def test_backup_dispatches_to_postgres_when_configured(monkeypatch):
 
     monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@host:5432/db")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    # The fingerprint is captured from the source DB; this test only checks the
+    # pg_dump command, so stub it rather than reach a real server.
+    monkeypatch.setattr(
+        backup_db, "_database_fingerprint",
+        lambda url: {"client": {"rows": 1, "sha256": "x"}},
+    )
 
     result = backup_db.create_backup(include_uploads=False)
 

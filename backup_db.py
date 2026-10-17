@@ -1,5 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime, time
 from pathlib import Path
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -87,13 +89,24 @@ def create_postgres_backup(include_uploads=True):
         ["pg_dump", "--format=custom", "--file", str(dump_path), _normalize_url(database_url)],
         check=True,
     )
+    fingerprint = _database_fingerprint(database_url)
+    if fingerprint is None:
+        raise RuntimeError(
+            "Backup written, but the source database could not be fingerprinted to "
+            "prove the backup is complete. Check DATABASE_URL and connectivity."
+        )
 
     if not include_uploads:
+        _write_fingerprint(dump_path, fingerprint)
         return dump_path
 
     backup_path = BACKUP_DIR / f"ablehome-full-{timestamp}.zip"
     with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.write(dump_path, arcname="database.dump")
+        archive.writestr(
+            "database.fingerprint.json",
+            json.dumps(fingerprint, indent=2, sort_keys=True),
+        )
         _write_uploads(archive)
     dump_path.unlink(missing_ok=True)
     return backup_path
@@ -189,14 +202,26 @@ def create_mysql_backup(include_uploads=True):
         if not dump_path.is_file() or dump_path.stat().st_size == 0:
             raise RuntimeError("mysqldump produced an empty backup; refusing to report success.")
 
+        fingerprint = _database_fingerprint(database_url)
+        if fingerprint is None:
+            raise RuntimeError(
+                "Backup written, but the source database could not be fingerprinted to "
+                "prove the backup is complete. Check DATABASE_URL and connectivity."
+            )
+
         if not include_uploads:
             final_path = BACKUP_DIR / f"ables-mysql-{timestamp}.sql"
             shutil.copy2(dump_path, final_path)
+            _write_fingerprint(final_path, fingerprint)
             return final_path
 
         backup_path = BACKUP_DIR / f"ablehome-mysql-{timestamp}.zip"
         with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.write(dump_path, arcname="database.sql")
+            archive.writestr(
+                "database.fingerprint.json",
+                json.dumps(fingerprint, indent=2, sort_keys=True),
+            )
             _write_uploads(archive)
         return backup_path
 
@@ -290,6 +315,93 @@ def _pg_restore_outcome(returncode, stderr, stdout):
 
 def _quote_ident(engine, name):
     return engine.dialect.identifier_preparer.quote(name)
+
+
+def _cell_bytes(value):
+    """A stable, unambiguous byte encoding of one column value.
+
+    ``None`` is distinguished from the empty string, and floats are encoded
+    with full precision so the fingerprint does not depend on locale or the
+    driver's default formatting.
+    """
+    if value is None:
+        return b"\x00NULL"
+    if isinstance(value, bytes):
+        return b"\x01b" + value
+    if isinstance(value, bool):
+        return b"\x01bool" + (b"1" if value else b"0")
+    if isinstance(value, (int,)):
+        return b"\x01i" + str(value).encode("utf-8")
+    if isinstance(value, float):
+        return b"\x01f" + repr(value).encode("utf-8")
+    if isinstance(value, datetime):
+        return b"\x01dt" + value.isoformat().encode("utf-8")
+    if isinstance(value, date):
+        return b"\x01d" + value.isoformat().encode("utf-8")
+    if isinstance(value, time):
+        return b"\x01t" + value.isoformat().encode("utf-8")
+    return b"\x01s" + str(value).encode("utf-8")
+
+
+def _table_digest(conn, engine, table):
+    """A content fingerprint of one table: row count, column names, and values.
+
+    Row counts alone cannot detect a restore that produced the right number of
+    rows with wrong values, so the digest folds in every value, in a
+    deterministic order. Returns ``{"rows": int, "sha256": str}``.
+    """
+    quoted = _quote_ident(engine, table)
+    columns = [column["name"] for column in engine.dialect.get_columns(conn, table)]
+    digest = hashlib.sha256()
+    rows = 0
+    result = conn.exec_driver_sql(f"SELECT * FROM {quoted}")
+    for row in result:
+        rows += 1
+        for value in row:
+            digest.update(_cell_bytes(value))
+            digest.update(b"\x1f")
+        digest.update(b"\x1e")
+    digest.update(("\x1d".join(columns)).encode("utf-8"))
+    return {"rows": rows, "sha256": digest.hexdigest()}
+
+
+def _database_fingerprint(url):
+    """``{table: {"rows", "sha256"}}`` for a reachable database, else ``None``."""
+    try:
+        from sqlalchemy import create_engine, inspect
+    except ImportError:  # pragma: no cover - sqlalchemy is a hard dependency
+        return None
+    engine = None
+    try:
+        engine = create_engine(_normalize_url(url))
+        fingerprint = {}
+        with engine.connect() as conn:
+            for name in inspect(engine).get_table_names():
+                fingerprint[name] = _table_digest(conn, engine, name)
+        return fingerprint
+    except Exception:
+        return None
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
+def _write_fingerprint(dump_path, fingerprint):
+    """Write the content fingerprint beside the dump as a small JSON sidecar."""
+    path = Path(str(dump_path) + ".fingerprint.json")
+    path.write_text(json.dumps(fingerprint, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _read_fingerprint(dump_path):
+    """Read the fingerprint sidecar for a dump, if it was written."""
+    path = Path(str(dump_path) + ".fingerprint.json")
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
 
 
 def _table_row_counts(url):
@@ -429,6 +541,35 @@ def _verify_restored_database(target_url, dump_path, objects):
         return False, f"could not inspect the restored database: {exc}"
 
     restored_counts = _table_row_counts(target_url) or {}
+
+    # Preferred: compare against the fingerprint captured when the backup was
+    # made. It is a content hash, so it catches a restore that produced the
+    # right number of rows with wrong values, and it stays authoritative even
+    # when the source database no longer exists (a real disaster).
+    recorded = _read_fingerprint(dump_path)
+    if recorded:
+        restored_fingerprint = _database_fingerprint(target_url)
+        if restored_fingerprint is None:
+            return False, "could not fingerprint the restored database to verify it"
+        problems = []
+        for table in sorted(recorded):
+            expected = recorded[table]
+            actual = restored_fingerprint.get(table)
+            if actual is None:
+                problems.append(f"{table}: missing after restore")
+            elif actual["rows"] != expected["rows"]:
+                problems.append(
+                    f"{table}: expected {expected['rows']} rows, got {actual['rows']}"
+                )
+            elif actual["sha256"] != expected["sha256"]:
+                problems.append(f"{table}: content mismatch (row values differ)")
+        if problems:
+            return False, "content verification failed: " + "; ".join(problems)
+        return True, (
+            f"verified {len(expected_tables)} table(s), {len(objects['indexes'])} index(es), "
+            "and content fingerprints against the backup"
+        )
+
     source_counts = _table_row_counts(_database_url())
     if source_counts:
         mismatched = [
@@ -628,26 +769,43 @@ def create_backup(include_uploads=True):
     return _dispatch_backup(_database_url(), include_uploads=include_uploads)
 
 
+BACKUP_PREFIXES = ("ablehome-", "ablehome-full-", "ables-postgres-", "ables-mysql-")
+BACKUP_SUFFIXES = (".zip", ".dump", ".sql")
+
+
+def list_backups(directory=None):
+    """Return the actual backup artifacts in ``directory``, newest first.
+
+    Fingerprint sidecars (``<dump>.fingerprint.json``) live beside their dump so
+    a restore can verify content, but they are not backups themselves and must
+    not be counted, listed, or cleaned up as if they were.
+    """
+    directory = directory or BACKUP_DIR
+    if not directory.exists():
+        return []
+    artifacts = [
+        path for path in directory.iterdir()
+        if path.is_file()
+        and path.name.startswith(BACKUP_PREFIXES)
+        and path.suffix in BACKUP_SUFFIXES
+    ]
+    return sorted(artifacts, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
 def cleanup_old_backups(keep=10):
     """Delete the oldest local backups, keeping the most recent ``keep``.
 
     This only removes *local* copies. It is safe solely when independent,
     verified backups exist off-site (upload them to durable off-host storage
-    before relying on this). Retention never removes the newest backup.
+    before relying on this). Retention never removes the newest backup, and it
+    removes a backup's fingerprint sidecar along with the backup itself.
     """
     BACKUP_DIR.mkdir(exist_ok=True)
-    prefixes = ("ablehome-", "ablehome-full-", "ables-postgres-", "ables-mysql-")
-    backups = sorted(
-        [
-            path for path in BACKUP_DIR.iterdir()
-            if path.is_file() and path.name.startswith(prefixes)
-        ],
-        key=lambda item: item.stat().st_mtime,
-        reverse=True,
-    )
+    backups = list_backups(BACKUP_DIR)
     removed = []
     for backup in backups[max(1, keep):]:
         backup.unlink()
+        Path(str(backup) + ".fingerprint.json").unlink(missing_ok=True)
         removed.append(backup.name)
     return removed
 
@@ -775,6 +933,14 @@ def main(argv=None):
                             print("Backup archive has no database dump member; cannot restore.")
                             raise SystemExit(1)
                         archive.extract(member, tmpdir)
+                        # Carry the recorded fingerprint next to the dump so
+                        # the restore is verified against the backup's content,
+                        # not just its row counts. It must land under the name
+                        # _read_fingerprint expects (<dump>.fingerprint.json).
+                        if "database.fingerprint.json" in members:
+                            Path(str(Path(tmpdir) / member) + ".fingerprint.json").write_bytes(
+                                archive.read("database.fingerprint.json")
+                            )
                     dump_path = Path(tmpdir) / member
                     _, restored = restore(dump_path, args.restore_to, allow_live=args.allow_live)
                     print(restored)
@@ -784,8 +950,9 @@ def main(argv=None):
             else:
                 _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
                 print(restored)
-            print("Restore drill complete. Schema objects and row counts were verified against the source;")
-            print("compare the alembic revision against production to finish.")
+            print("Restore drill complete. Schema objects and row counts were verified against the source,")
+            print("and the restored content was checked against the fingerprint recorded in the backup.")
+            print("Compare the alembic revision against production to finish.")
             return
     except RuntimeError as error:
         # Refusals (live target, missing tool, failed dump) should read as a

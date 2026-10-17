@@ -106,12 +106,18 @@ security fix in `tests/test_core_features.py`.
 - Restore drills verify more than the exit code. `backup_db` reads the dump's
   schema from its own table of contents (`pg_restore --list` for PostgreSQL,
   `CREATE TABLE`/`INSERT INTO` for MySQL), then confirms the schema objects
-  exist and that row counts match the source (or, if the source is gone, that
-  tables the dump carried data for are non-empty). A restore that created the
-  tables but lost rows is reported as a failure. `pg_restore` exit 1 is accepted
-  only for the understood version-skew GUC; the ignored-errors summary alone is
-  never treated as success. Live drills: `POSTGRES_TEST_URL=...` and
-  `MYSQL_TEST_URL=...` (the MySQL one needs `mysqldump`/`mysql` on PATH).
+  exist and that the restored *content* matches the backup. When the backup was
+  taken, a per-table fingerprint (row count plus a SHA-256 over every value) is
+  recorded beside the dump and travels with it, so a restore is verified against
+  what the backup contains, not just its row counts — and it stays authoritative
+  even when the source database no longer exists. Without a fingerprint the
+  check falls back to comparing row counts against the live source, and when the
+  source is gone, to requiring that tables the dump carried data for are
+  non-empty. A restore that created the tables but lost or altered rows is
+  reported as a failure. `pg_restore` exit 1 is accepted only for the understood
+  version-skew GUC; the ignored-errors summary alone is never treated as
+  success. Live drills: `POSTGRES_TEST_URL=...` and `MYSQL_TEST_URL=...` (the
+  MySQL one needs `mysqldump`/`mysql` on PATH).
 - Admin routes are guarded in the body (`require_role("admin")` /
   `require_permission(...)`) after `@login_required`, not by a decorator.
   `tests/test_admin_authorization_sweep.py` enumerates every `/admin/` route

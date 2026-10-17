@@ -6,6 +6,7 @@ deterministic fakes for ``subprocess``/``shutil.which``; two optional live
 tests (connection and a full backup/restore round trip) skip unless a
 MariaDB/MySQL URL is provided via ``MYSQL_TEST_URL``.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -396,6 +397,7 @@ def test_mysql_backup_includes_version_appropriate_flags(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@dbhost:3306/ables")
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/mysqldump")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup_db, "_database_fingerprint", lambda url: {"t": {"rows": 1, "sha256": "x"}})
 
     result = backup_db.create_backup(include_uploads=False)
     try:
@@ -420,6 +422,7 @@ def test_backup_dispatches_to_mysql_when_configured(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "mysql://user:pass@dbhost:3306/ables")
     monkeypatch.setattr(backup_db.shutil, "which", fake_which)
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup_db, "_database_fingerprint", lambda url: {"t": {"rows": 1, "sha256": "x"}})
 
     result = backup_db.create_backup(include_uploads=False)
 
@@ -486,6 +489,7 @@ def test_mysql_backup_passes_password_via_environment_not_argv(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "mysql://user:sekret@dbhost:3306/ables")
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/mysqldump")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup_db, "_database_fingerprint", lambda url: {"t": {"rows": 1, "sha256": "x"}})
 
     result = backup_db.create_backup(include_uploads=False)
     try:
@@ -701,17 +705,32 @@ def test_live_postgres_backup_and_restore_round_trip():
                     count = conn.execute(text("SELECT COUNT(*) FROM patients")).scalar()
                 assert count == 2
 
-                # The verification must be able to fail, not merely pass. Give
-                # the source a row the dump does not contain, so the restored
-                # copy (2 rows) no longer matches the source (3 rows). This is
-                # the exact condition a silently truncated restore produces, and
-                # it must be rejected rather than reported as success.
+                # The verification must be able to fail, not merely pass. The
+                # restore is checked against the fingerprint recorded at backup
+                # time, so a source that drifts *after* the backup does not
+                # invalidate an otherwise good restore.
                 with source.begin() as conn:
                     conn.execute(text("INSERT INTO patients VALUES (3, 'Linus')"))
+                restored, message = backup_db.restore_postgres_dump(backup_path, scratch_url)
+                assert restored is True
+                assert "content fingerprints" in message
+
+                # Tamper with the recorded fingerprint: the restored data no
+                # longer matches what the backup claims it contains, and that
+                # must be rejected even though every row count still matches.
+                sidecar = Path(str(backup_path) + ".fingerprint.json")
+                recorded = json.loads(sidecar.read_text(encoding="utf-8"))
+                recorded["patients"]["sha256"] = "0" * 64
+                sidecar.write_text(json.dumps(recorded), encoding="utf-8")
+                with pytest.raises(RuntimeError, match="content mismatch"):
+                    backup_db.restore_postgres_dump(backup_path, scratch_url)
+
+                # Without a fingerprint, verification falls back to comparing
+                # row counts against the live source. The source now has one
+                # row the dump lacks, so that fallback must fail too.
+                sidecar.unlink()
                 with pytest.raises(RuntimeError, match="row-count mismatch"):
-                    backup_db.restore_postgres_dump(
-                        backup_path, scratch_url
-                    )
+                    backup_db.restore_postgres_dump(backup_path, scratch_url)
             finally:
                 backup_path.unlink(missing_ok=True)
         finally:
@@ -839,6 +858,217 @@ def test_verify_restored_database_rejects_an_unreadable_toc(tmp_path, monkeypatc
     )
     assert ok is False
     assert "table of contents" in detail
+
+
+def test_fingerprint_detects_same_row_count_but_different_values(tmp_path, monkeypatch):
+    """The nuance row counts cannot cover: equal counts, different data.
+
+    Two tables with the same number of rows but different values must produce
+    different fingerprints, and verification must fail on that difference even
+    though every count matches.
+    """
+    from sqlalchemy import create_engine, text
+
+    source = tmp_path / "source.db"
+    target = tmp_path / "target.db"
+    for path, name in ((source, "Ada"), (target, "Bob")):
+        engine = create_engine(f"sqlite:///{path}")
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+            conn.execute(text("INSERT INTO patients VALUES (1, :n)"), {"n": name})
+        engine.dispose()
+
+    # Same row count (1) on both sides, so a row-count check alone passes.
+    assert backup_db._table_row_counts(f"sqlite:///{source}") == {"patients": 1}
+    assert backup_db._table_row_counts(f"sqlite:///{target}") == {"patients": 1}
+    assert (
+        backup_db._database_fingerprint(f"sqlite:///{source}")["patients"]["sha256"]
+        != backup_db._database_fingerprint(f"sqlite:///{target}")["patients"]["sha256"]
+    )
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    backup_db._write_fingerprint(dump, backup_db._database_fingerprint(f"sqlite:///{source}"))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{source}")
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", dump, objects)
+    assert ok is False
+    assert "content mismatch" in detail
+
+
+def test_fingerprint_verifies_without_a_reachable_source(tmp_path, monkeypatch):
+    """A recorded fingerprint stays authoritative when the source is gone.
+
+    This is the disaster case: the source database no longer exists, so counts
+    cannot be compared. The fingerprint captured at backup time still proves
+    the restored copy matches what was backed up.
+    """
+    from sqlalchemy import create_engine, text
+
+    source = tmp_path / "source.db"
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{source}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada'), (2, 'Grace')"))
+    engine.dispose()
+    shutil.copy(source, target)
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    backup_db._write_fingerprint(dump, backup_db._database_fingerprint(f"sqlite:///{source}"))
+    # The source is unreachable now.
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'gone.db'}")
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", dump, objects)
+    assert ok is True, detail
+    assert "content fingerprints" in detail
+
+    # Corrupt one value in the restored copy: same row count, different content.
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE patients SET name = 'Mallory' WHERE id = 1"))
+    engine.dispose()
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", dump, objects)
+    assert ok is False
+    assert "content mismatch" in detail
+
+
+def test_cell_bytes_distinguishes_none_from_empty_and_keeps_float_precision():
+    from datetime import date, datetime
+
+    assert backup_db._cell_bytes(None) != backup_db._cell_bytes("")
+    assert backup_db._cell_bytes(1) != backup_db._cell_bytes(True)
+    # Floats are encoded with repr(), i.e. full precision, not a rounded form.
+    assert backup_db._cell_bytes(0.1) == b"\x01f" + repr(0.1).encode("utf-8")
+    assert backup_db._cell_bytes(0.1) != backup_db._cell_bytes(0.2)
+    assert backup_db._cell_bytes(datetime(2026, 1, 2, 3, 4, 5)) == backup_db._cell_bytes(
+        datetime(2026, 1, 2, 3, 4, 5)
+    )
+    assert backup_db._cell_bytes(date(2026, 1, 2)) != backup_db._cell_bytes(date(2026, 1, 3))
+    assert backup_db._cell_bytes(b"\x00\x01") != backup_db._cell_bytes("")
+
+
+def test_backup_archive_carries_the_fingerprint(tmp_path, monkeypatch):
+    """The zip a user uploads off-site must include the fingerprint sidecar."""
+    import zipfile
+
+    def fake_run(cmd, check=False, **kwargs):
+        if cmd[0] == "pg_dump":
+            Path(cmd[cmd.index("--file") + 1]).write_bytes(b"PGDMP fake")
+        return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup_db, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(
+        backup_db, "_database_fingerprint",
+        lambda url: {"patients": {"rows": 2, "sha256": "abc123"}},
+    )
+
+    archive_path = backup_db.create_postgres_backup(include_uploads=False)
+    assert archive_path.suffix == ".dump"
+    sidecar = Path(str(archive_path) + ".fingerprint.json")
+    assert sidecar.is_file()
+    assert backup_db._read_fingerprint(archive_path) == {"patients": {"rows": 2, "sha256": "abc123"}}
+
+    archive_path.unlink()
+    sidecar.unlink()
+    zipped = backup_db.create_postgres_backup(include_uploads=True)
+    assert zipped.suffix == ".zip"
+    with zipfile.ZipFile(zipped) as archive:
+        assert "database.fingerprint.json" in archive.namelist()
+        assert "database.dump" in archive.namelist()
+        assert archive.read("database.fingerprint.json").strip().startswith(b"{")
+
+
+def test_backup_refuses_to_report_success_without_a_fingerprint(tmp_path, monkeypatch):
+    """If the source cannot be fingerprinted, the backup must not claim success."""
+    def fake_run(cmd, check=False, **kwargs):
+        if cmd[0] == "pg_dump":
+            Path(cmd[cmd.index("--file") + 1]).write_bytes(b"PGDMP fake")
+        return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup_db, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(backup_db, "_database_fingerprint", lambda url: None)
+
+    with pytest.raises(RuntimeError, match="could not be fingerprinted"):
+        backup_db.create_postgres_backup(include_uploads=False)
+
+
+def test_cli_restore_extracts_fingerprint_from_the_zip(tmp_path, monkeypatch):
+    """Regression: the CLI must read the fingerprint member while the zip is open.
+
+    An earlier version extracted it after the ``with`` block closed the archive,
+    raising "Attempt to use ZIP archive that was already closed" and leaving the
+    restore unverified.
+    """
+    import zipfile
+
+    backup_path = tmp_path / "ablehome-full-20260101-000000.zip"
+    with zipfile.ZipFile(backup_path, "w") as archive:
+        archive.writestr("database.dump", b"PGDMP fake")
+        archive.writestr("database.fingerprint.json", '{"patients": {"rows": 2, "sha256": "abc"}}')
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
+    monkeypatch.setattr(backup_db, "_dispatch_backup", lambda url, include_uploads=True: backup_path)
+    monkeypatch.setattr(backup_db, "verify_backup", lambda path: (True, "ok"))
+
+    seen = {}
+
+    def fake_restore(dump_path, target_url, allow_live=False):
+        seen["fingerprint"] = backup_db._read_fingerprint(dump_path)
+        return True, "restored"
+
+    monkeypatch.setattr(backup_db, "restore_postgres_dump", fake_restore)
+
+    backup_db.main(["--restore-to", "postgresql://u:p@scratch:5432/scratch"])
+
+    # The sidecar was extracted next to the dump and read successfully.
+    assert seen["fingerprint"] == {"patients": {"rows": 2, "sha256": "abc"}}
+
+
+def test_list_backups_excludes_fingerprint_sidecars(tmp_path):
+    """Sidecars must not be counted or listed as if they were backups."""
+    dump = tmp_path / "ables-postgres-20260101-000000.dump"
+    dump.write_bytes(b"PGDMP")
+    sidecar = Path(str(dump) + ".fingerprint.json")
+    sidecar.write_text("{}", encoding="utf-8")
+    zipped = tmp_path / "ablehome-full-20260101-000001.zip"
+    zipped.write_bytes(b"PK")
+    # A non-backup stray file is also ignored.
+    (tmp_path / "notes.txt").write_text("hi", encoding="utf-8")
+
+    listed = [path.name for path in backup_db.list_backups(tmp_path)]
+    assert set(listed) == {dump.name, zipped.name}
+    assert sidecar.name not in listed
+
+
+def test_cleanup_removes_sidecar_with_its_backup(tmp_path, monkeypatch):
+    monkeypatch.setattr(backup_db, "BACKUP_DIR", tmp_path)
+    older = tmp_path / "ables-postgres-20260101-000000.dump"
+    older.write_bytes(b"PGDMP")
+    older_sidecar = Path(str(older) + ".fingerprint.json")
+    older_sidecar.write_text("{}", encoding="utf-8")
+    newer = tmp_path / "ables-postgres-20260102-000000.dump"
+    newer.write_bytes(b"PGDMP")
+    newer_sidecar = Path(str(newer) + ".fingerprint.json")
+    newer_sidecar.write_text("{}", encoding="utf-8")
+
+    removed = backup_db.cleanup_old_backups(keep=1)
+
+    assert removed == [older.name]
+    assert not older.exists()
+    assert not older_sidecar.exists(), "the sidecar must go with its backup"
+    # The kept backup and its sidecar survive.
+    assert newer.exists()
+    assert newer_sidecar.exists()
 
 
 def test_verify_restored_database_rejects_an_unreachable_target(tmp_path, monkeypatch):

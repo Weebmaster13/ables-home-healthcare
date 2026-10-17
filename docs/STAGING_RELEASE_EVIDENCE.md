@@ -149,24 +149,43 @@ raise.
 #### What "verified" now means
 
 Confirming that tables exist is necessary but not sufficient: a restore can
-create every table and still lose the rows. `_verify_restored_database` checks
-three things, for both the PostgreSQL and MySQL paths:
+create every table and still lose or alter the rows. A row-count match is a
+strong check but not a complete one either: two tables can hold the same number
+of rows with different values. `_verify_restored_database` therefore checks
+content, for both the PostgreSQL and MySQL paths:
 
 1. every table, view, and index the dump defines is present in the target;
-2. row counts match the source database, table by table; and
-3. when the source is no longer reachable (a genuine disaster), every table the
-   dump carried data for is at least non-empty.
+2. the restored content matches the fingerprint recorded in the backup: per
+   table, the row count and a SHA-256 over every value and the column names.
+   This catches same-count/different-values, and it is authoritative even when
+   the source database no longer exists (a genuine disaster).
+
+When a backup predates fingerprinting (no sidecar), verification falls back to
+comparing row counts against the live source; and when the source is gone, to
+requiring that every table the dump carried data for is at least non-empty. That
+fallback is weaker — non-empty tables cannot prove every expected row survived —
+so the fingerprint is the primary check and the fallback is a compatibility path
+only.
 
 An unreachable target, or a dump whose table of contents cannot be read, is
 reported as a failure rather than assumed to have succeeded. The schema objects
 come from the dump itself: `pg_restore --list` for PostgreSQL, and the
 `CREATE TABLE`/`INSERT INTO` statements for MySQL.
 
-The row-count comparison was proven able to fail, not merely pass: adding one
-row to the source made a restore raise
-`row-count mismatch: patients: expected 3, got 2` on both backends. The
-PostgreSQL drill, the MySQL drill, and the version-skew case all pass, and the
-full suite is green with both live drills enabled.
+The checks were proven able to fail, not merely pass:
+
+- adding one row to the source made a restore raise
+  `row-count mismatch: patients: expected 3, got 2` on both backends (the
+  fallback path);
+- two tables with the same row count but different values produce different
+  fingerprints, and a restore whose content differs from the backup raises
+  `content mismatch (row values differ)` (the fingerprint path);
+- in a simulated disaster, the source database was dropped entirely and a
+  restore from the stored archive still verified against the backup's
+  fingerprint and succeeded.
+
+The PostgreSQL drill, the MySQL drill, and the version-skew case all pass, and
+the full suite is green with both live drills enabled.
 
 ### 6. Admin route authorization
 
@@ -258,10 +277,11 @@ The changes are additive and backend-aware; none alters stored data.
    `/tmp` does not. Confirm the chosen path and its permissions.
 4. Off-site backup copies are not automated here. Taking a dump is not the same
    as storing a recoverable copy elsewhere; upload verified dumps off-site. The
-   restore drill now verifies schema objects and row counts against the source,
-   so a dump that restores incompletely is caught, but that is a local check
-   only: the off-site copy and its restoration still need to be demonstrated
-   against the real target.
+   restore drill now verifies the restored *content* against a fingerprint
+   recorded in the backup (row count plus a per-table value hash), so a dump that
+   restores incompletely or with altered rows is caught, but that is a local
+   check only: the off-site copy and its restoration still need to be
+   demonstrated against the real target.
 5. The admin authorization sweep covers every `/admin/` route for anonymous,
    non-admin, and admin access (see "Admin route authorization"). It does not
    cover finer-grained `require_permission` distinctions within the admin role,
