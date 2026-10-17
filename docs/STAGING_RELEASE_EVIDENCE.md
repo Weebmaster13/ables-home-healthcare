@@ -130,15 +130,38 @@ partially restored database as healthy.
 
 `backup_db.restore_postgres_dump` now accepts exit 1 only when every ignored
 error is the understood version-skew GUC (`unrecognized configuration parameter`
-from a `SET`, which carries no data), and then confirms the dump's tables are
-actually present in the target before returning success. Anything else raises.
+from a `SET`, which carries no data), and then confirms the restore before
+returning success. Anything else raises.
 
 Verified live on a PostgreSQL 17 dump restored into a PostgreSQL 16 server (the
 genuine version-skew case): the call returned success with the message
-`... (unrecognized configuration parameter "transaction_timeout"; verified 2
-table(s) present)`, and `SELECT id, name FROM patients` returned the seeded
-rows. A data-losing restore (restoring over existing objects) and a bad-target
-restore both raise.
+`... (unrecognized configuration parameter "transaction_timeout"; verified 3
+table(s), 1 index(es), and row counts against the source)`, and
+`SELECT id, name FROM patients` returned the seeded rows. A data-losing restore
+(the source gained a row the dump did not contain) and a bad-target restore both
+raise.
+
+#### What "verified" now means
+
+Confirming that tables exist is necessary but not sufficient: a restore can
+create every table and still lose the rows. `_verify_restored_database` checks
+three things, for both the PostgreSQL and MySQL paths:
+
+1. every table, view, and index the dump defines is present in the target;
+2. row counts match the source database, table by table; and
+3. when the source is no longer reachable (a genuine disaster), every table the
+   dump carried data for is at least non-empty.
+
+An unreachable target, or a dump whose table of contents cannot be read, is
+reported as a failure rather than assumed to have succeeded. The schema objects
+come from the dump itself: `pg_restore --list` for PostgreSQL, and the
+`CREATE TABLE`/`INSERT INTO` statements for MySQL.
+
+The row-count comparison was proven able to fail, not merely pass: adding one
+row to the source made a restore raise
+`row-count mismatch: patients: expected 3, got 2` on both backends. The
+PostgreSQL drill, the MySQL drill, and the version-skew case all pass, and the
+full suite is green with both live drills enabled.
 
 ### 6. Admin route authorization
 

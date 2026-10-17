@@ -288,8 +288,45 @@ def _pg_restore_outcome(returncode, stderr, stdout):
     return True, "; ".join(ignorable)
 
 
-def _postgres_dump_tables(dump_path):
-    """Table names the dump should create, from its table of contents."""
+def _quote_ident(engine, name):
+    return engine.dialect.identifier_preparer.quote(name)
+
+
+def _table_row_counts(url):
+    """Return ``{table: row_count}`` for a reachable database, else ``None``.
+
+    Used to compare the restored copy against the source. Returns ``None``
+    (rather than raising) when the database cannot be reached, so a restore
+    into a target whose source is gone still completes with the weaker
+    dump-derived checks below.
+    """
+    try:
+        from sqlalchemy import create_engine, inspect, text
+    except ImportError:  # pragma: no cover - sqlalchemy is a hard dependency
+        return None
+    engine = None
+    try:
+        engine = create_engine(_normalize_url(url))
+        counts = {}
+        with engine.connect() as conn:
+            for name in inspect(engine).get_table_names():
+                counts[name] = conn.execute(
+                    text(f"SELECT COUNT(*) FROM {_quote_ident(engine, name)}")
+                ).scalar()
+        return counts
+    except Exception:
+        return None
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
+def _postgres_dump_objects(dump_path):
+    """Schema objects a custom-format dump defines, from ``pg_restore --list``.
+
+    Returns ``{"tables", "indexes", "constraints", "sequences", "data_tables"}``
+    or ``None`` when the table of contents cannot be read.
+    """
     client = shutil.which("pg_restore")
     if client is None:
         return None
@@ -298,43 +335,128 @@ def _postgres_dump_tables(dump_path):
     )
     if result.returncode != 0:
         return None
-    names = set()
+    objects = {
+        "tables": set(),
+        "indexes": set(),
+        "constraints": set(),
+        "sequences": set(),
+        "data_tables": set(),
+    }
     for line in result.stdout.decode("utf-8", "replace").splitlines():
-        # "218; 1259 16386 TABLE public client ables" -> capture the table name.
-        # Skip "TABLE DATA" / "TABLE ATTACH", which name the schema next.
-        match = re.match(
-            r"^\d+;\s+\d+\s+\d+\s+(?:TABLE|VIEW)\s+(?!DATA\b)(?!ATTACH\b)"
-            r"(\S+)\s+(\S+)\s+(\S+)",
-            line,
+        # Real TOC lines (note CONSTRAINT names both its table and itself, and
+        # that "SEQUENCE OWNED BY"/"SEQUENCE SET" must not match "SEQUENCE"):
+        #   "218; 1259 16386 TABLE public client ables"
+        #   "3458; 0 16386 TABLE DATA public client ables"
+        #   "3319; 2606 16393 CONSTRAINT public client client_pkey ables"
+        #   "217; 1259 16385 SEQUENCE public client_id_seq ables"
+        # Anchoring at the end keeps "TABLE ATTACH"/"SEQUENCE OWNED BY" out.
+        patterns = (
+            ("data_tables", r"\sTABLE DATA\s+(\S+)\s+(\S+)\s+\S+\s*$", 2),
+            ("tables", r"\sTABLE\s+(?!DATA\b)(?!ATTACH\b)(\S+)\s+(\S+)\s+\S+\s*$", 2),
+            ("tables", r"\sVIEW\s+(\S+)\s+(\S+)\s+\S+\s*$", 2),
+            ("indexes", r"\sINDEX\s+(\S+)\s+(\S+)\s+\S+\s*$", 2),
+            ("constraints", r"\sCONSTRAINT\s+(\S+)\s+(\S+)\s+(\S+)\s+\S+\s*$", 3),
+            ("sequences", r"\sSEQUENCE\s+(?!OWNED\b)(?!SET\b)(\S+)\s+(\S+)\s+\S+\s*$", 2),
         )
-        if match:
-            names.add(match.group(2))
-    return names
+        if not re.match(r"^\d+;", line):
+            continue
+        for bucket, pattern, group in patterns:
+            match = re.search(pattern, line)
+            if match:
+                objects[bucket].add(match.group(group))
+                break
+    return objects
 
 
-def _verify_postgres_restore(target_url, expected_tables):
-    """Confirm the target actually holds the tables the dump defines.
+def _mysql_dump_objects(dump_path):
+    """Schema objects a mysqldump defines, parsed from its SQL text."""
+    text_data = Path(dump_path).read_bytes().decode("utf-8", "replace")
+    tables = set(re.findall(r"CREATE TABLE (?:IF NOT EXISTS )?`?([A-Za-z0-9_]+)`?", text_data))
+    data_tables = set(re.findall(r"INSERT INTO `?([A-Za-z0-9_]+)`?", text_data))
+    return {"tables": tables, "indexes": set(), "constraints": set(),
+            "sequences": set(), "data_tables": data_tables}
 
-    pg_restore can exit 0 or 1 while silently having loaded nothing (for
-    example a mismatched target), so success is only reported once the dumped
-    tables are present. Returns (ok, detail).
+
+def _verify_restored_database(target_url, dump_path, objects):
+    """Confirm a restore produced the dump's schema *and* its data.
+
+    Table existence alone is necessary but not sufficient: a restore can create
+    every table and still lose the rows. Two levels are checked:
+
+    1. Every table, index, and constraint the dump defines must exist.
+    2. Row counts must match the source database. When the source is not
+       reachable, every table the dump carried data for must be non-empty.
+
+    Returns ``(ok, detail)``.
     """
+    if objects is None:
+        # The dump's table of contents could not be read, so the restore cannot
+        # be confirmed. That points at a corrupt or unreadable dump, not a
+        # verified success, so fail rather than assume the data arrived.
+        return False, "could not read the dump's table of contents to verify the restore"
+    expected_tables = objects["tables"]
     if not expected_tables:
         return True, "no tables in the dump to verify"
+
     try:
         from sqlalchemy import create_engine, inspect
     except ImportError:  # pragma: no cover - sqlalchemy is a hard dependency
         return True, "sqlalchemy unavailable; table verification skipped"
-    engine = create_engine(_normalize_url(target_url))
+
     try:
-        inspector = inspect(engine)
-        present = set(inspector.get_table_names()) | set(inspector.get_view_names())
-    finally:
-        engine.dispose()
-    missing = sorted(expected_tables - present)
-    if missing:
-        return False, "missing after restore: " + ", ".join(missing)
-    return True, f"verified {len(expected_tables)} table(s) present"
+        engine = create_engine(_normalize_url(target_url))
+        try:
+            inspector = inspect(engine)
+            present_tables = set(inspector.get_table_names()) | set(inspector.get_view_names())
+            missing = sorted(expected_tables - present_tables)
+            if missing:
+                return False, "missing tables after restore: " + ", ".join(missing)
+
+            present_indexes = {
+                index["name"]
+                for table in inspector.get_table_names()
+                for index in inspector.get_indexes(table)
+                if index.get("name")
+            }
+            missing_indexes = sorted(objects["indexes"] - present_indexes)
+            if missing_indexes:
+                return False, "missing indexes after restore: " + ", ".join(missing_indexes)
+        finally:
+            engine.dispose()
+    except Exception as exc:
+        # An unreachable target means the restore cannot be confirmed, so treat
+        # it as a failure rather than assuming success.
+        return False, f"could not inspect the restored database: {exc}"
+
+    restored_counts = _table_row_counts(target_url) or {}
+    source_counts = _table_row_counts(_database_url())
+    if source_counts:
+        mismatched = [
+            f"{table}: expected {source_counts[table]}, got {restored_counts.get(table)}"
+            for table in sorted(expected_tables)
+            if table in source_counts and restored_counts.get(table) != source_counts[table]
+        ]
+        if mismatched:
+            return False, "row-count mismatch: " + "; ".join(mismatched)
+        return True, (
+            f"verified {len(expected_tables)} table(s), {len(objects['indexes'])} index(es), "
+            "and row counts against the source"
+        )
+
+    # The source is gone, so counts cannot be compared. At minimum, a table the
+    # dump carried data for must not be empty after restore.
+    empty = sorted(
+        table for table in objects["data_tables"] if restored_counts.get(table, 0) == 0
+    )
+    if empty:
+        return False, "tables present but empty after restore: " + ", ".join(empty)
+    return True, f"verified {len(expected_tables)} table(s) present and non-empty"
+
+
+def _verify_postgres_restore(target_url, dump_path):
+    return _verify_restored_database(
+        target_url, dump_path, _postgres_dump_objects(dump_path)
+    )
 
 
 def restore_postgres_dump(dump_path, target_url, allow_live=False):
@@ -397,13 +519,14 @@ def restore_postgres_dump(dump_path, target_url, allow_live=False):
     if not ok:
         raise RuntimeError(f"Restore failed (exit {result.returncode}): {detail[:300]}")
 
-    verified, verify_detail = _verify_postgres_restore(target_url, _postgres_dump_tables(dump_path))
+    verified, verify_detail = _verify_postgres_restore(target_url, dump_path)
     if not verified:
         raise RuntimeError(f"Restore reported success but verification failed: {verify_detail}")
 
     if detail:
         # Only the understood version-skew GUC was ignored; the data loaded and
-        # the tables are present, so report success but surface what was skipped.
+        # the schema and row counts check out, so report success but surface
+        # what was skipped.
         return True, (
             f"Restored {dump_path.name} into {database} "
             f"({detail}; {verify_detail})."
@@ -466,7 +589,13 @@ def restore_mysql_dump(dump_path, target_url, allow_live=False):
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or b"restore failed").decode("utf-8", "replace").strip()
         raise RuntimeError(f"Restore failed (exit {result.returncode}): {detail[:300]}")
-    return True, f"Restored {dump_path.name} into {database}."
+
+    verified, verify_detail = _verify_restored_database(
+        target_url, dump_path, _mysql_dump_objects(dump_path)
+    )
+    if not verified:
+        raise RuntimeError(f"Restore reported success but verification failed: {verify_detail}")
+    return True, f"Restored {dump_path.name} into {database} ({verify_detail})."
 
 
 def create_sqlite_backup(include_uploads=True):
@@ -655,7 +784,8 @@ def main(argv=None):
             else:
                 _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
                 print(restored)
-            print("Restore drill complete. Compare row counts and the alembic revision against production.")
+            print("Restore drill complete. Schema objects and row counts were verified against the source;")
+            print("compare the alembic revision against production to finish.")
             return
     except RuntimeError as error:
         # Refusals (live target, missing tool, failed dump) should read as a

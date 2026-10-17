@@ -103,6 +103,10 @@ def test_restore_passes_credentials_via_env_not_argv(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "mysql://u:livepw@dbhost:3306/ables")
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/mysql")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    # This test is about credential handling, not the post-restore inspection.
+    monkeypatch.setattr(
+        backup_db, "_verify_restored_database", lambda url, dump_path, objects: (True, "verified")
+    )
 
     ok, message = backup_db.restore_mysql_dump(
         dump, "mysql+pymysql://restorer:scratchpw@dbhost:3306/ables_restore"
@@ -166,7 +170,7 @@ def test_postgres_restore_passes_password_via_env_not_argv(monkeypatch, tmp_path
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
     monkeypatch.setattr(
-        backup_db, "_verify_postgres_restore", lambda url, expected: (True, "verified")
+        backup_db, "_verify_postgres_restore", lambda url, dump_path: (True, "verified")
     )
 
     ok, message = backup_db.restore_postgres_dump(
@@ -202,7 +206,7 @@ def _fake_pg_restore(monkeypatch, tmp_path, stderr, returncode=1, tables=("clien
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
     monkeypatch.setattr(
-        backup_db, "_verify_postgres_restore", lambda url, expected: (True, "verified")
+        backup_db, "_verify_postgres_restore", lambda url, dump_path: (True, "verified")
     )
     return dump
 
@@ -271,7 +275,7 @@ def test_postgres_restore_raises_when_a_table_is_missing_after_restore(monkeypat
     dump = _fake_pg_restore(monkeypatch, tmp_path, b"", returncode=0, tables=("client",))
     monkeypatch.setattr(
         backup_db, "_verify_postgres_restore",
-        lambda url, expected: (False, "missing after restore: client"),
+        lambda url, dump_path: (False, "missing tables after restore: client"),
     )
 
     with pytest.raises(RuntimeError, match="verification failed"):
@@ -684,6 +688,30 @@ def test_live_postgres_backup_and_restore_round_trip():
                 with scratch.connect() as conn:
                     rows = conn.execute(text("SELECT id, name FROM patients ORDER BY id")).fetchall()
                 assert rows == [(1, "Ada"), (2, "Grace")]
+
+                # The verification must be able to fail on real data loss, not
+                # merely pass. Delete rows from the restored copy, restore over
+                # it with --clean (which drops and recreates the table), and
+                # confirm the row-count check still accepts a full restore...
+                with scratch.begin() as conn:
+                    conn.execute(text("DELETE FROM patients WHERE id = 2"))
+                restored, message = backup_db.restore_postgres_dump(backup_path, scratch_url)
+                assert restored is True
+                with scratch.connect() as conn:
+                    count = conn.execute(text("SELECT COUNT(*) FROM patients")).scalar()
+                assert count == 2
+
+                # The verification must be able to fail, not merely pass. Give
+                # the source a row the dump does not contain, so the restored
+                # copy (2 rows) no longer matches the source (3 rows). This is
+                # the exact condition a silently truncated restore produces, and
+                # it must be rejected rather than reported as success.
+                with source.begin() as conn:
+                    conn.execute(text("INSERT INTO patients VALUES (3, 'Linus')"))
+                with pytest.raises(RuntimeError, match="row-count mismatch"):
+                    backup_db.restore_postgres_dump(
+                        backup_path, scratch_url
+                    )
             finally:
                 backup_path.unlink(missing_ok=True)
         finally:
@@ -695,6 +723,196 @@ def test_live_postgres_backup_and_restore_round_trip():
         with admin.connect() as conn:
             conn.execute(text(f"DROP DATABASE IF EXISTS {source_db}"))
             conn.execute(text(f"DROP DATABASE IF EXISTS {scratch_db}"))
+
+
+def test_verify_restored_database_accepts_a_faithful_restore(tmp_path, monkeypatch):
+    """A restored copy that matches the source in schema and rows passes.
+
+    Uses real SQLite databases and real SQLAlchemy inspection, so the check
+    itself is exercised rather than mocked.
+    """
+    from sqlalchemy import create_engine, text
+
+    source = tmp_path / "source.db"
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{source}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada'), (2, 'Grace')"))
+    engine.dispose()
+    shutil.copy(source, target)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{source}")
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", target, objects)
+    assert ok is True, detail
+    assert "row counts against the source" in detail
+
+
+def test_verify_restored_database_rejects_missing_rows(tmp_path, monkeypatch):
+    """Schema present but data lost must fail. This is the caution under test:
+    table existence alone does not prove the data was restored."""
+    from sqlalchemy import create_engine, text
+
+    source = tmp_path / "source.db"
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{source}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada'), (2, 'Grace')"))
+    engine.dispose()
+
+    # The target has the table but only one of the two rows.
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada')"))
+    engine.dispose()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{source}")
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", target, objects)
+    assert ok is False
+    assert "row-count mismatch" in detail
+    assert "patients" in detail
+
+
+def test_verify_restored_database_rejects_a_missing_table(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, text
+
+    source = tmp_path / "source.db"
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{source}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("CREATE TABLE clients (id INTEGER PRIMARY KEY)"))
+    engine.dispose()
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+    engine.dispose()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{source}")
+
+    objects = {"tables": {"patients", "clients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": set()}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", target, objects)
+    assert ok is False
+    assert "missing tables" in detail and "clients" in detail
+
+
+def test_verify_restored_database_without_a_reachable_source_requires_non_empty(tmp_path, monkeypatch):
+    """When the source is gone, counts cannot be compared, so a table the dump
+    carried data for must at least be non-empty."""
+    from sqlalchemy import create_engine, text
+
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada')"))
+    engine.dispose()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'does-not-exist.db'}")
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", target, objects)
+    assert ok is True, detail
+    assert "non-empty" in detail
+
+    # Empty the table: now the weaker check must fail.
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM patients"))
+    engine.dispose()
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", target, objects)
+    assert ok is False
+    assert "empty after restore" in detail
+
+
+def test_verify_restored_database_rejects_an_unreadable_toc(tmp_path, monkeypatch):
+    """A dump whose table of contents cannot be read cannot be verified."""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'source.db'}")
+    ok, detail = backup_db._verify_restored_database(
+        "sqlite:///:memory:", tmp_path / "database.dump", None
+    )
+    assert ok is False
+    assert "table of contents" in detail
+
+
+def test_verify_restored_database_rejects_an_unreachable_target(tmp_path, monkeypatch):
+    """An unreachable target cannot be confirmed, so it is a failure."""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'source.db'}")
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(
+        "postgresql://u:p@127.0.0.1:1/none", tmp_path / "database.dump", objects
+    )
+    assert ok is False
+    assert "could not inspect" in detail
+
+
+def test_mysql_dump_objects_parses_create_and_insert(tmp_path):
+    dump = tmp_path / "database.sql"
+    dump.write_text(
+        "-- MySQL dump\n"
+        "CREATE TABLE `patients` (id INT PRIMARY KEY, name VARCHAR(50));\n"
+        "INSERT INTO `patients` VALUES (1,'Ada'),(2,'Grace');\n"
+        "CREATE TABLE IF NOT EXISTS clients (id INT);\n"
+        "INSERT INTO clients VALUES (1);\n",
+        encoding="utf-8",
+    )
+    objects = backup_db._mysql_dump_objects(dump)
+    assert objects["tables"] == {"patients", "clients"}
+    assert objects["data_tables"] == {"patients", "clients"}
+
+
+def test_postgres_dump_objects_classifies_toc_lines(tmp_path, monkeypatch):
+    # Real `pg_restore --list` output, including the lines that must not be
+    # mistaken for a table or a plain sequence.
+    toc = (
+        ";\n"
+        "218; 1259 16386 TABLE public client ables\n"
+        "3458; 0 16386 TABLE DATA public client ables\n"
+        "3470; 0 16386 TABLE ATTACH public client ables\n"
+        "217; 1259 16385 SEQUENCE public client_id_seq ables\n"
+        "3479; 0 0 SEQUENCE OWNED BY public client_id_seq ables\n"
+        "3480; 0 0 SEQUENCE SET public client_id_seq ables\n"
+        "3317; 1259 16394 INDEX public client_name_idx ables\n"
+        "3319; 2606 16393 CONSTRAINT public client client_pkey ables\n"
+    )
+
+    def fake_run(cmd, capture_output=True, check=False):
+        return backup_db.subprocess.CompletedProcess(cmd, 0, toc.encode(), b"")
+
+    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    objects = backup_db._postgres_dump_objects(tmp_path / "database.dump")
+    assert objects["tables"] == {"client"}
+    assert objects["data_tables"] == {"client"}
+    assert objects["indexes"] == {"client_name_idx"}
+    assert objects["constraints"] == {"client_pkey"}
+    assert objects["sequences"] == {"client_id_seq"}
+
+
+def test_postgres_dump_objects_reads_a_real_dump(tmp_path):
+    """Parse an actual pg_dump file when a PostgreSQL server is available."""
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        pytest.skip("POSTGRES_TEST_URL not set; real-dump parse skipped")
+    if shutil.which("pg_dump") is None or shutil.which("pg_restore") is None:
+        pytest.skip("pg_dump/pg_restore not installed")
+    dump = tmp_path / "real.dump"
+    created = subprocess.run(
+        ["pg_dump", "--format=custom", "--file", str(dump), "--schema-only", url],
+        capture_output=True, check=False,
+    )
+    if created.returncode != 0 or not dump.is_file():
+        pytest.skip(f"pg_dump could not dump {url!r}")
+    objects = backup_db._postgres_dump_objects(dump)
+    assert objects is not None
+    assert isinstance(objects["tables"], set)
 
 
 @pytest.mark.parametrize(

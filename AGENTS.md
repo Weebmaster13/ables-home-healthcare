@@ -103,6 +103,15 @@ security fix in `tests/test_core_features.py`.
   HTTPS. `--password` is required (no committed default). See
   `docs/STAGING_RELEASE_EVIDENCE.md` for the owner-controlled checks, exact
   configuration requirements, rollback, and remaining blockers.
+- Restore drills verify more than the exit code. `backup_db` reads the dump's
+  schema from its own table of contents (`pg_restore --list` for PostgreSQL,
+  `CREATE TABLE`/`INSERT INTO` for MySQL), then confirms the schema objects
+  exist and that row counts match the source (or, if the source is gone, that
+  tables the dump carried data for are non-empty). A restore that created the
+  tables but lost rows is reported as a failure. `pg_restore` exit 1 is accepted
+  only for the understood version-skew GUC; the ignored-errors summary alone is
+  never treated as success. Live drills: `POSTGRES_TEST_URL=...` and
+  `MYSQL_TEST_URL=...` (the MySQL one needs `mysqldump`/`mysql` on PATH).
 - Admin routes are guarded in the body (`require_role("admin")` /
   `require_permission(...)`) after `@login_required`, not by a decorator.
   `tests/test_admin_authorization_sweep.py` enumerates every `/admin/` route
