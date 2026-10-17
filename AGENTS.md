@@ -12,12 +12,17 @@ Entry points: `wsgi.py` (production, adds proxy-header handling) and
 ## Run tests
 
 ```bash
-python -m pytest -q          # must stay green (currently 156 passed, 2 skipped)
+python -m pytest -q          # must stay green (currently 163 passed, 3 skipped)
 ```
 
-Two live MySQL/MariaDB tests skip unless `MYSQL_TEST_URL` is set; CI runs them
-in the `pytest-mysql` job against a real MariaDB service (see
-`.github/workflows/tests.yml`).
+The live-database tests skip unless their URL is set. CI runs them in two jobs
+against real services (see `.github/workflows/tests.yml`): `pytest-mysql` sets
+`MYSQL_TEST_URL` (MariaDB 11) and `pytest-postgres` sets `POSTGRES_TEST_URL`
+(postgres:16). Keep the PostgreSQL service on the same major as the runner's
+`pg_dump` client — `pg_dump` refuses to dump a newer server, and the CI job
+fails loudly if the drill skips instead of running. Locally the drill skips with
+a clear reason on a client/server major mismatch (e.g. a v17 client vs a v16
+server) rather than failing with a confusing `pg_restore` error.
 
 Tests use a temp SQLite DB (see `tests/conftest.py`) and disable CSRF, so many
 workflows are exercised without CSRF enforcement. Add regression tests for any
