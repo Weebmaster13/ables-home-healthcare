@@ -89,3 +89,14 @@ security fix in `tests/test_core_features.py`.
   requires `RESET_ALL_CONFIRM=yes` and refuses in production.
 - `load_user` rejects inactive accounts, so disabling a user invalidates
   existing sessions on the next request.
+- Restore drills: `pg_restore` exits 1 when it ignored non-fatal errors (for
+  example a version-skew GUC) even though the data loaded.
+  `backup_db._pg_restore_outcome` treats that specific case as success and
+  raises on every other non-zero exit. Do not "simplify" it back to
+  `returncode != 0`.
+- Staging verification runs against the real stack, not the test client:
+  `tools/staging_recovery.py` prints one fresh admin recovery code, and
+  `tools/staging_verify.py` drives gunicorn + MariaDB + MailHog + ClamAV over
+  HTTPS. `--password` is required (no committed default). See
+  `docs/STAGING_RELEASE_EVIDENCE.md` for the owner-controlled checks, exact
+  configuration requirements, rollback, and remaining blockers.
