@@ -927,21 +927,24 @@ def test_full_file_scan_detects_signature_past_sample_boundary():
     assert "EICAR" in message or "Virus" in message
 
 
-def test_external_scanner_receives_complete_file():
+def test_external_scanner_receives_complete_file(tmp_path):
     from security import scan_upload_stream
 
+    # `tee` writes everything it reads on stdin to a file, so we can prove the
+    # scanner saw the whole upload rather than a leading sample.
+    captured = tmp_path / "seen.bin"
     with app.app_context():
         original = app.config.get("VIRUS_SCAN_COMMAND")
-        # `wc -c` prints the number of bytes it received on stdin and exits 0.
-        app.config["VIRUS_SCAN_COMMAND"] = "wc -c"
+        app.config["VIRUS_SCAN_COMMAND"] = f"tee {captured}"
         try:
             payload = b"X" * 9000
             file_storage = FileStorage(stream=BytesIO(payload), filename="big.pdf")
             clean, _ = scan_upload_stream(file_storage)
         finally:
             app.config["VIRUS_SCAN_COMMAND"] = original
-    # A scanner must see the whole file, not a truncated sample.
     assert clean is True
+    # A scanner must see the whole file, not a truncated sample.
+    assert captured.read_bytes() == payload
 
 
 def test_production_without_scanner_rejects_upload():

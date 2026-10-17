@@ -79,8 +79,13 @@ def main(argv=None):
 
     flask_env = os.environ.get("FLASK_ENV", "")
     db_url = os.environ.get("DATABASE_URL", "")
-    if flask_env.lower() == "production" and not db_url:
-        results.append(("FAIL", "FLASK_ENV=production without DATABASE_URL (app would refuse to boot)."))
+    if not db_url:
+        if flask_env.lower() == "production":
+            results.append(("FAIL", "FLASK_ENV=production without DATABASE_URL (app would refuse to boot)."))
+        else:
+            # Not production, so the app boots on the local SQLite fallback, but
+            # the operator still needs to know no server database is configured.
+            results.append(("WARN", "DATABASE_URL not set; app would use the local SQLite fallback, not a server database."))
     else:
         results.append(("PASS", f"DATABASE_URL configured: {mask_url(db_url)}"))
 
