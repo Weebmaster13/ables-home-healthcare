@@ -6,13 +6,18 @@ check, how to roll back, and the blockers that remain. Nothing here has been
 merged or deployed. Merge and deploy require the owner's explicit approval.
 
 Verified state: `repair/security-audit-2026-10`. The full suite and the live CI
-drills (`pytest`, `pytest-mysql`, `pytest-postgres`) passed, and the staging
-harness passed 15/15 against the running stack, on the branch head at the time
-of verification (`de464a7`, the commit that introduced this file; later commits
-on the branch touch only documentation). Confirm with `git rev-parse HEAD` and
-compare against the release target before merging (see "Confirm the tested
-commit is the release commit"). If HEAD differs in code, re-run the suite and
-the harness before merging.
+drills (`pytest`, `pytest-mysql`, `pytest-postgres`) passed on the branch head
+at the time of writing. Confirm with `git rev-parse HEAD` and compare against
+the release target before merging (see "Confirm the tested commit is the release
+commit"). If HEAD differs in code, re-run the suite and the harness before
+merging.
+
+Last verified head: `c2dc1dd` ("Verify restored schema objects and row counts,
+not just table existence"). At that commit: the full suite passed (187 passed
+with the live PostgreSQL and MySQL drills enabled; 183 passed, 4 skipped without
+them), and all three CI jobs (`pytest`, `pytest-mysql`, `pytest-postgres`) were
+green. The restore drills were also run directly against real servers, including
+a PostgreSQL 17 dump restored into a PostgreSQL 16 server.
 
 ## What the staging stack was
 
@@ -252,9 +257,16 @@ The changes are additive and backend-aware; none alters stored data.
 3. Production must use durable, private storage. cPanel home-disk paths persist;
    `/tmp` does not. Confirm the chosen path and its permissions.
 4. Off-site backup copies are not automated here. Taking a dump is not the same
-   as storing a recoverable copy elsewhere; upload verified dumps off-site.
-5. A full live authorization sweep of every admin route was not performed. The
-   document-download path is now covered; treat other routes as needs-verification.
+   as storing a recoverable copy elsewhere; upload verified dumps off-site. The
+   restore drill now verifies schema objects and row counts against the source,
+   so a dump that restores incompletely is caught, but that is a local check
+   only: the off-site copy and its restoration still need to be demonstrated
+   against the real target.
+5. The admin authorization sweep covers every `/admin/` route for anonymous,
+   non-admin, and admin access (see "Admin route authorization"). It does not
+   cover finer-grained `require_permission` distinctions within the admin role,
+   client-versus-caregiver data access, or session invalidation after a password
+   change; treat those as needs-verification.
 
 ## Confirm the tested commit is the release commit
 
