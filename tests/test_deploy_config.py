@@ -1,7 +1,26 @@
 """Deployment-config regression tests: no Docker daemon needed."""
 import pathlib
+import re
+
+import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def test_smoke_workflow_secret_key_passes_production_guard():
+    """The CI dummy key must satisfy the production SECRET_KEY guard.
+
+    A too-short CI key silently breaks the smoke stack (the app refuses to
+    boot), which is exactly what the production guard is meant to prevent.
+    """
+    from config import DEVELOPMENT_SECRET_KEYS
+
+    text = (ROOT / ".github" / "workflows" / "deploy-smoke.yml").read_text()
+    match = re.search(r"^\s*SECRET_KEY=(\S+)\s*$", text, re.MULTILINE)
+    assert match, "deploy-smoke.yml must set a SECRET_KEY for the smoke stack"
+    key = match.group(1)
+    assert len(key) >= 32, f"CI SECRET_KEY too short for the production guard: {len(key)} chars"
+    assert key not in DEVELOPMENT_SECRET_KEYS
 
 
 def test_dockerfile_uses_supported_runtime_and_port():
@@ -63,3 +82,123 @@ def test_oracle_env_template_has_placeholders_only():
     text = (ROOT / ".env.oracle.example").read_text()
     assert "REPLACE_" in text
     assert ".env.oracle" in (ROOT / ".gitignore").read_text()
+
+
+def test_backup_artifacts_are_gitignored():
+    """Database dumps hold client/employee data and must never be committed.
+
+    ``backup_db.py`` writes into ``backups/`` and can emit ``*.sql``/``*.dump``
+    files, so both must be ignored.
+    """
+    text = (ROOT / ".gitignore").read_text()
+    assert "backups/" in text
+    assert "*.sql" in text
+    assert "*.dump" in text
+
+
+def test_a_workflow_runs_the_unit_tests_on_every_push():
+    """The suite must be verified by CI on all commits, not just narrow paths.
+
+    deployment-smoke is path-filtered, so without an unfiltered tests workflow
+    a test-only commit produces no CI record and the pass count is unverifiable.
+    """
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+    unfiltered = []
+    for path in workflows:
+        config = yaml.safe_load(path.read_text())
+        triggers = config.get(True, config.get("on", {})) or {}
+        push = triggers.get("push")
+        # A bare `push:` (None) runs on every push; a dict means a path filter.
+        if push is None or push == {}:
+            unfiltered.append(path)
+    assert unfiltered, "no workflow runs on every push; test-only commits get no CI"
+
+
+def test_ci_runs_the_live_backup_restore_drill():
+    """The live drills must run in CI, not only on a developer machine.
+
+    Without MYSQL_TEST_URL / POSTGRES_TEST_URL the round-trip tests skip, so
+    the workflow needs a real database service and the matching variable set,
+    or the documented restore drill is never actually executed by CI. Both
+    backends are covered: the MySQL/MariaDB drill and the PostgreSQL drill.
+    """
+    config = yaml.safe_load((ROOT / ".github" / "workflows" / "tests.yml").read_text())
+    jobs = config["jobs"]
+    live = [name for name, job in jobs.items() if "services" in job]
+    assert live, "no CI job provides a database service for the live drill"
+    live_url_vars = {"MYSQL_TEST_URL", "POSTGRES_TEST_URL"}
+    covered = set()
+    for name in live:
+        envs = [step.get("env", {}) for step in jobs[name]["steps"]]
+        job_vars = {var for env in envs for var in live_url_vars if var in env}
+        assert job_vars, f"{name} provides a database service but sets no live-test URL"
+        covered |= job_vars
+    assert covered == live_url_vars, f"live drills not covered for: {live_url_vars - covered}"
+
+
+def test_deployment_restore_uses_the_tested_client_url_helper():
+    """The restore snippet must use the tested helper, not an inline shell hack.
+
+    The URL rewriting is covered by executing `backup_db.client_url` in
+    test_database_backends.py; this only checks the doc points at it rather
+    than at a hand-rolled substitution that can drift out of sync.
+    """
+    text = (ROOT / "DEPLOYMENT.md").read_text()
+    assert "backup_db.client_url" in text
+    assert 'mysql "$DATABASE_URL"' not in text
+
+
+def test_deployment_uses_db_current_as_the_reachability_probe():
+    """`db check` is Alembic model-drift, not a connectivity check.
+
+    On a fresh database it exits non-zero with "Target database is not up to
+    date", so documenting it as "driver + schema reachable" misleads the
+    operator. `db current` connects and prints the applied revision.
+    """
+    text = (ROOT / "DEPLOYMENT.md").read_text()
+    assert "flask --app app db current" in text
+    assert "driver + schema reachable" not in text
+
+
+def test_restore_drill_never_creates_the_scratch_database_from_the_client():
+    """cPanel creates and grants the scratch DB; the client must not CREATE it.
+
+    The old text told the operator to create `ables_restore` in cPanel *and*
+    to run `CREATE DATABASE ables_restore`, which conflicts (or fails, because
+    the account user usually lacks the CREATE privilege).
+    """
+    for name in ("DEPLOYMENT.md", "CPANEL_MYSQL.md"):
+        text = (ROOT / name).read_text()
+        assert "CREATE DATABASE ables_restore" not in text, name
+
+
+def test_cpanel_troubleshooting_uses_the_cpanel_requirements_set():
+    """The boot-failure steps must not tell the operator to install requirements.txt."""
+    text = (ROOT / "CPANEL_MYSQL.md").read_text()
+    troubleshooting = text.split("## Boot-failure triage", 1)[1].split("\n## ", 1)[0]
+    assert "install -r requirements-cpanel.txt" in troubleshooting
+    assert "install -r requirements.txt" not in troubleshooting
+
+
+def test_requirements_include_both_database_drivers():
+    text = (ROOT / "requirements.txt").read_text()
+    # PostgreSQL (Railway/VPS) and MySQL/MariaDB (cPanel) must both install.
+    assert "psycopg2-binary" in text
+    assert "PyMySQL" in text
+
+
+def test_config_normalizes_mysql_and_postgres_schemes(monkeypatch):
+    """Execute config.database_url() rather than grepping config.py.
+
+    The earlier version only asserted the strings appear in the source, which
+    passes even if the normalization branches are dead. This calls the function
+    and checks the URLs it actually returns.
+    """
+    import config
+
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "mysql://user:pass@host:3306/ables")
+    assert config.database_url() == "mysql+pymysql://user:pass@host:3306/ables"
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@host:5432/ables")
+    assert config.database_url() == "postgresql://user:pass@host:5432/ables"

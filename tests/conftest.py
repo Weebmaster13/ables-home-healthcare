@@ -12,6 +12,8 @@ from extensions import db
 def pytest_configure():
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
+    # Never reach out to the Have I Been Pwned API during tests.
+    app.config["PASSWORD_BREACH_CHECK_ENABLED"] = False
     with app.app_context():
         db.create_all()
 

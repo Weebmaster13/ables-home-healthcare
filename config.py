@@ -8,6 +8,11 @@ ENV_FILE = os.environ.get("ENV_FILE", ".env")
 load_dotenv(os.path.join(BASE_DIR, ENV_FILE))
 
 def database_url():
+    if os.environ.get("FLASK_ENV", "").lower() == "production" and not os.environ.get("DATABASE_URL"):
+        raise RuntimeError(
+            "DATABASE_URL is required when FLASK_ENV=production: refusing to "
+            "boot on the local SQLite fallback with production settings."
+        )
     url = os.environ.get(
         "DATABASE_URL",
         "sqlite:///" + os.path.join(BASE_DIR, "instance", "ablehome.db")
@@ -21,6 +26,11 @@ def database_url():
     # Some hosts still expose the older Heroku-style postgres:// URL.
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql://", 1)
+
+    # GoDaddy cPanel MySQL/MariaDB uses the pure-Python PyMySQL driver.
+    # Normalize bare mysql:// URLs so SQLAlchemy selects that dialect.
+    if url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+pymysql://", 1)
 
     return url
 
@@ -41,18 +51,47 @@ def is_production_environment(database_uri):
     return bool(os.environ.get("DATABASE_URL")) and not database_uri.startswith("sqlite:///")
 
 
+DEVELOPMENT_SECRET_KEYS = {
+    "dev-secret-change-later",
+    "dev-change-this-before-production",
+}
+
+
+def secret_key(production):
+    """Return the session secret, refusing a weak key in production.
+
+    A missing, too-short, or known development key must not silently sign
+    production sessions; fail fast instead of trusting the fallback value.
+    """
+    key = os.environ.get("SECRET_KEY", "").strip()
+    if production and (len(key) < 32 or key in DEVELOPMENT_SECRET_KEYS):
+        raise RuntimeError(
+            "SECRET_KEY must be a long random value when running in production: "
+            "refusing to boot with a missing, short, or development key."
+        )
+    return key or "dev-secret-change-later"
+
+
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-later")
+    SQLALCHEMY_DATABASE_URI = database_url()
+    PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)
+    SECRET_KEY = secret_key(PRODUCTION_ENVIRONMENT)
     SITE_BASE_URL = os.environ.get(
         "SITE_BASE_URL",
-        "https://ables-home-healthcare.onrender.com"
+        "https://ableshomehealthcare.com"
     ).rstrip("/")
-    SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Shared hosting (cPanel MySQL/MariaDB) drops idle connections; pre-ping
+    # transparently reconnects. Safe on SQLite and PostgreSQL too.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(BASE_DIR, "instance", "uploads"))
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(5 * 1024 * 1024)))
-    PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)
-    AUTO_MIGRATE_ON_STARTUP = env_bool("AUTO_MIGRATE_ON_STARTUP", env_bool("RENDER"))
+    # Migrations run via an explicit deploy step (preDeployCommand / CLI) so a
+    # single, deliberate strategy applies rather than multiple triggers.
+    AUTO_MIGRATE_ON_STARTUP = env_bool("AUTO_MIGRATE_ON_STARTUP", False)
+    # Stream logging (stdout/stderr) is always on. The local rotating file is
+    # optional: set LOG_TO_FILE=false for read-only checks or ephemeral hosts.
+    LOG_TO_FILE = env_bool("LOG_TO_FILE", True)
     REMEMBER_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_SECURE = PRODUCTION_ENVIRONMENT
     SESSION_COOKIE_HTTPONLY = True
@@ -63,7 +102,11 @@ class Config:
     FORCE_HTTPS = env_bool("FORCE_HTTPS", PRODUCTION_ENVIRONMENT)
     ACCOUNT_LOCKOUT_ATTEMPTS = int(os.environ.get("ACCOUNT_LOCKOUT_ATTEMPTS", "5"))
     ACCOUNT_LOCKOUT_MINUTES = int(os.environ.get("ACCOUNT_LOCKOUT_MINUTES", "15"))
-    ADMIN_RECOVERY_CODES_REQUIRED = env_bool("ADMIN_RECOVERY_CODES_REQUIRED", False)
+    # Recovery-code enforcement defaults on in production; dev stays lenient.
+    ADMIN_RECOVERY_CODES_REQUIRED = env_bool("ADMIN_RECOVERY_CODES_REQUIRED", PRODUCTION_ENVIRONMENT)
+    # Breached-password (Have I Been Pwned) check. Fail-open on network errors;
+    # disable only if outbound network calls are not acceptable.
+    PASSWORD_BREACH_CHECK_ENABLED = env_bool("PASSWORD_BREACH_CHECK_ENABLED", True)
 
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
@@ -80,6 +123,10 @@ class Config:
     TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "")
     ENABLE_SMS_REMINDERS = env_bool("ENABLE_SMS_REMINDERS", False)
     VIRUS_SCAN_COMMAND = os.environ.get("VIRUS_SCAN_COMMAND", "")
+    # When production has no external antivirus scanner, reject uploads by
+    # default (fail closed). Set UPLOAD_SCAN_FAIL_OPEN=true only to accept
+    # unscanned uploads after the owner has approved that documented risk.
+    UPLOAD_SCAN_FAIL_OPEN = env_bool("UPLOAD_SCAN_FAIL_OPEN", False)
     BUSINESS_DETAILS_CONFIRMED = env_bool("BUSINESS_DETAILS_CONFIRMED")
     LEGAL_SCOPE_CONFIRMED = env_bool("LEGAL_SCOPE_CONFIRMED")
     LEGAL_PRIVACY_REVIEW_CONFIRMED = env_bool("LEGAL_PRIVACY_REVIEW_CONFIRMED")

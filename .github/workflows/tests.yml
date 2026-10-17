@@ -1,0 +1,123 @@
+# Fast unit/regression suite. The deployment-smoke workflow only triggers on a
+# narrow path list, so a test-only or config-only commit previously produced no
+# CI record at all. This runs the suite on every push and pull request so the
+# pass/fail count is independently verifiable.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches the cPanel target interpreter reported by preflight_cpanel.py.
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Run the test suite
+        run: python -m pytest -q
+
+  # Runs the live MySQL/MariaDB tests (connection + full backup/restore round
+  # trip) against a real server, so the documented restore drill is verified
+  # reproducibly rather than only by hand. Without MYSQL_TEST_URL those tests
+  # skip, which is why this job sets it.
+  pytest-mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Verify the live server is reachable
+        run: |
+          mysql --version
+          mysqladmin --protocol=tcp --host=127.0.0.1 --port=3306 --user=root --password=root ping
+
+      - name: Run the suite with the live database drill enabled
+        env:
+          MYSQL_TEST_URL: "mysql+pymysql://root:root@127.0.0.1:3306/"
+        run: python -m pytest -q
+
+  # Runs the live PostgreSQL restore drill against a real server, so the
+  # documented `backup_db.py --restore-to` path for PostgreSQL is verified
+  # reproducibly. Without POSTGRES_TEST_URL that test skips, which is why this
+  # job sets it. pg_dump refuses to dump a server newer than itself, and the
+  # ubuntu-latest image ships the v16 client, so the service is pinned to
+  # postgres:16 to keep the client and server majors aligned.
+  pytest-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ables_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Show client tool versions
+        run: |
+          pg_dump --version
+          pg_restore --version
+          psql --version
+
+      - name: Run the suite with the live PostgreSQL drill enabled
+        env:
+          POSTGRES_TEST_URL: "postgresql://postgres:postgres@127.0.0.1:5432/ables_test"
+        run: |
+          set -o pipefail
+          python -m pytest -q -rs 2>&1 | tee /tmp/pytest-postgres.log
+          # Guard against the drill silently skipping (e.g. a future runner
+          # image shipping a pg_dump major that no longer matches the service).
+          if grep -q "live PostgreSQL drill skipped" /tmp/pytest-postgres.log; then
+            echo "::error::the live PostgreSQL drill skipped instead of running"
+            exit 1
+          fi

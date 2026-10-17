@@ -2,8 +2,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import logging
 
-from flask import Flask, redirect, request, url_for
-from flask_login import current_user
+from flask import Flask, flash, redirect, request, session, url_for
+from flask_login import current_user, logout_user
 from flask_migrate import upgrade
 from config import Config
 from extensions import csrf, db, login_manager, migrate
@@ -29,6 +29,7 @@ def create_app():
 
     configure_logging(app)
     register_https_enforcement(app)
+    register_session_invalidation(app)
     register_admin_recovery_gate(app)
     register_security_headers(app)
     register_error_handlers(app)
@@ -52,12 +53,31 @@ def run_startup_migrations(app):
 
 
 def configure_logging(app):
-    log_dir = Path(app.instance_path) / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(log_dir / "app.log", maxBytes=1_000_000, backupCount=5)
-    handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-    app.logger.addHandler(handler)
+    """Log to stdout/stderr (captured by container platforms) plus a local file.
+
+    Local rotating files are not durable in ephemeral containers, so the
+    stream handler is what platform log aggregation actually collects. The
+    local file is skipped entirely when ``LOG_TO_FILE`` is false, so a
+    read-only preflight does not create any files.
+    """
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(formatter)
+    app.logger.addHandler(stream_handler)
+
+    if app.config.get("LOG_TO_FILE", True):
+        try:
+            log_dir = Path(app.instance_path) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(log_dir / "app.log", maxBytes=1_000_000, backupCount=5)
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(formatter)
+            app.logger.addHandler(file_handler)
+        except OSError:
+            app.logger.warning("Local log file unavailable; continuing with stream logging only.")
+
     app.logger.setLevel(logging.INFO)
 
 
@@ -84,6 +104,41 @@ def register_template_helpers(app):
             ).count()
 
         return counts
+
+
+def register_session_invalidation(app):
+    """End sessions whose password changed after the session was established.
+
+    Flask-Login's strong session protection ties a session to a client id, but
+    it does not invalidate an existing session when the password changes. This
+    gate closes that gap: it stores a fingerprint of the current password hash
+    in the session and, on every request, compares it to the user's current
+    password hash. A mismatch means the password changed (or the session was
+    forged from an older credential), so the session is cleared. Any session
+    cookie stolen before a password change stops working immediately.
+    """
+    from security import password_fingerprint
+
+    @app.before_request
+    def invalidate_stale_sessions():
+        if not current_user.is_authenticated:
+            return None
+
+        fingerprint = password_fingerprint(current_user)
+        session_fingerprint = session.get("_pw_fp")
+        if session_fingerprint is None:
+            # Session predates this gate (for example after a deploy); adopt
+            # the current password rather than logging the user out.
+            session["_pw_fp"] = fingerprint
+            return None
+
+        if session_fingerprint != fingerprint:
+            logout_user()
+            session.clear()
+            flash("Your password was changed. Please log in again.", "info")
+            return redirect(url_for("auth.login"))
+
+        return None
 
 
 def register_admin_recovery_gate(app):

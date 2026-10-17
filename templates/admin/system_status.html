@@ -9,7 +9,7 @@
 
 <section class="dashboard-stats mb-4">
     <div class="stat-card"><span>Database</span><strong>{{ "OK" if status.database_ok else "Issue" }}</strong></div>
-    <div class="stat-card"><span>PostgreSQL</span><strong>{{ "Ready" if status.postgresql_configured else "SQLite" }}</strong></div>
+    <div class="stat-card"><span>{{ status.database_backend_label }}</span><strong>{{ "Ready" if status.database_ok else "Issue" }}</strong></div>
     <div class="stat-card"><span>SMTP</span><strong>{{ "Ready" if status.smtp_configured else "Missing" }}</strong></div>
     <div class="stat-card"><span>Virus Scanner</span><strong>{{ "Ready" if status.virus_scanner_configured else "Basic" }}</strong></div>
     <div class="stat-card"><span>Backups</span><strong>{{ backup_count }}</strong></div>
@@ -29,7 +29,7 @@
     <div class="portal-actions mt-3">
         <a class="btn btn-outline-primary btn-sm" href="/admin/maintenance">Maintenance Center</a>
         <a class="btn btn-outline-primary btn-sm" href="/admin/logs">View Logs</a>
-        <a class="btn btn-outline-primary btn-sm" href="/healthz">Health JSON</a>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/healthz">Health JSON</a>
     </div>
 </section>
 
@@ -42,6 +42,19 @@
                 <div><strong>{{ item.channel }} | {{ item.status }}</strong><span>{{ item.recipient }} | {{ item.error }}</span></div>
                 {% else %}
                 <div class="empty-state">No failed notifications found.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="content-card h-100">
+            <h2 class="h4">Recent skipped notifications</h2>
+            <p class="text-muted small mb-2">Submissions were saved, but no email left the server (for example, SMTP is not configured).</p>
+            <div class="clean-list">
+                {% for item in skipped_notifications %}
+                <div><strong>{{ item.channel }} | {{ item.status }}</strong><span>{{ item.recipient }} | {{ item.error }}</span></div>
+                {% else %}
+                <div class="empty-state">No skipped notifications found.</div>
                 {% endfor %}
             </div>
         </div>

@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, render_template, request, redirect, se
 from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from werkzeug.security import generate_password_hash, check_password_hash
+import hashlib
 
 from models import User
 from extensions import db
@@ -10,9 +11,14 @@ from security import (
     audit,
     clear_login_failures,
     clear_user_login_failures,
+    commit_or_flash_failure,
+    commit_quietly,
     login_is_limited,
     password_feedback,
+    password_fingerprint,
+    password_is_breached,
     password_is_strong,
+    public_form_is_limited,
     record_login_failure,
     record_user_login_failure,
     admin_recovery_codes_enabled,
@@ -51,6 +57,10 @@ def register():
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("auth.register"))
 
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
+            return redirect(url_for("auth.register"))
+
         existing_user = User.query.filter_by(
             email=email
         ).first()
@@ -68,7 +78,8 @@ def register():
         )
 
         db.session.add(user)
-        db.session.commit()
+        if not commit_or_flash_failure():
+            return redirect(url_for("auth.register"))
 
         flash("Account created successfully.", "success")
 
@@ -118,7 +129,7 @@ def login():
             record_login_failure()
             record_user_login_failure(user)
             audit("login_failure", "User", user.id, "Failed password attempt")
-            db.session.commit()
+            commit_quietly()
             flash("Invalid email or password.", "danger")
             return redirect(url_for("auth.login"))
 
@@ -127,16 +138,17 @@ def login():
             record_login_failure()
             record_user_login_failure(user)
             audit("admin_recovery_code_failure", "User", user.id, "Missing or invalid admin recovery code")
-            db.session.commit()
+            commit_quietly()
             flash("Enter a valid admin recovery code.", "danger")
             return redirect(url_for("auth.login"))
 
         clear_login_failures()
         clear_user_login_failures(user)
         audit("login_success", "User", user.id, "Successful login")
-        db.session.commit()
+        commit_quietly()
         session.permanent = True
         login_user(user)
+        session["_pw_fp"] = password_fingerprint(user)
 
         flash(
             f"Welcome back, {user.name}!",
@@ -155,7 +167,7 @@ def login():
 @login_required
 def logout():
     audit("logout", "User", current_user.id, "User logged out")
-    db.session.commit()
+    commit_quietly()
 
     logout_user()
 
@@ -175,6 +187,22 @@ def reset_serializer():
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
 
 
+def password_reset_fingerprint(user):
+    """Fingerprint the current password hash so a reset link is single-use.
+
+    Changing the password changes the hash, which invalidates any link that
+    was issued against the previous password.
+    """
+    return hashlib.sha256((user.password or "").encode("utf-8")).hexdigest()[:32]
+
+
+def make_password_reset_token(user):
+    return reset_serializer().dumps(
+        {"email": user.email, "pw": password_reset_fingerprint(user)},
+        salt="password-reset",
+    )
+
+
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     if current_user.is_authenticated:
@@ -183,11 +211,17 @@ def forgot_password():
     dev_reset_url = session.pop("dev_password_reset_url", None)
 
     if request.method == "POST":
+        # Throttle reset requests per client: without this, anyone could use
+        # the endpoint to send unbounded reset emails to a known address.
+        if public_form_is_limited("password_reset"):
+            flash("Too many reset requests. Please wait a few minutes and try again.", "danger")
+            return redirect(url_for("auth.forgot_password"))
+
         email = request.form.get("email", "").strip().lower()
         user = User.query.filter_by(email=email).first()
 
         if user:
-            token = reset_serializer().dumps(user.email, salt="password-reset")
+            token = make_password_reset_token(user)
             reset_url = url_for("auth.reset_password", token=token, _external=True)
             body = (
                 f"Hello {user.name},\n\n"
@@ -210,7 +244,14 @@ def forgot_password():
                 related_id=user.id,
             )
             audit("password_reset_requested", "User", user.id, f"Delivery status: {'sent' if sent else 'not sent'}")
-            db.session.commit()
+            # Roll back silently on failure: flashing a database error only when
+            # the account exists would leak account existence through the
+            # generic "if that account exists" response.
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Could not record password reset request")
 
             if not sent and not current_app.config.get("SESSION_COOKIE_SECURE"):
                 session["dev_password_reset_url"] = reset_url
@@ -227,7 +268,7 @@ def reset_password(token):
         return redirect(url_for("main.dashboard"))
 
     try:
-        email = reset_serializer().loads(token, salt="password-reset", max_age=3600)
+        payload = reset_serializer().loads(token, salt="password-reset", max_age=3600)
     except SignatureExpired:
         flash("This reset link expired. Please request a new one.", "danger")
         return redirect(url_for("auth.forgot_password"))
@@ -235,7 +276,19 @@ def reset_password(token):
         flash("Invalid reset link.", "danger")
         return redirect(url_for("auth.forgot_password"))
 
+    if isinstance(payload, dict):
+        email = payload.get("email", "")
+        fingerprint = payload.get("pw", "")
+    else:
+        # Legacy tokens issued before single-use enforcement.
+        email = payload
+        fingerprint = ""
+
     user = User.query.filter_by(email=email).first_or_404()
+
+    if fingerprint and fingerprint != password_reset_fingerprint(user):
+        flash("This reset link has already been used. Please request a new one.", "danger")
+        return redirect(url_for("auth.forgot_password"))
 
     if request.method == "POST":
         password = request.form.get("password", "")
@@ -250,10 +303,17 @@ def reset_password(token):
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("auth.reset_password", token=token))
 
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
+            return redirect(url_for("auth.reset_password", token=token))
+
         user.password = generate_password_hash(password)
         user.password_changed_at = db.func.now()
         clear_user_login_failures(user)
-        db.session.commit()
+        if not commit_or_flash_failure(
+            "We could not update your password because of a temporary problem. Please try again."
+        ):
+            return redirect(url_for("auth.reset_password", token=token))
 
         flash("Password updated. Please log in.", "success")
         return redirect(url_for("auth.login"))
@@ -282,10 +342,17 @@ def change_password():
             flash("Password is not safe enough. Add " + ", ".join(feedback["missing"]) + ".", "danger")
             return redirect(url_for("auth.change_password"))
 
+        if password_is_breached(password):
+            flash("That password has appeared in a known data breach. Please choose a different one.", "danger")
+            return redirect(url_for("auth.change_password"))
+
         current_user.password = generate_password_hash(password)
         current_user.password_changed_at = db.func.now()
         audit("change_password", "User", current_user.id, "Password changed")
         db.session.commit()
+        # Keep this session valid; every other existing session is invalidated
+        # on its next request because its stored fingerprint no longer matches.
+        session["_pw_fp"] = password_fingerprint(current_user)
 
         flash("Password changed successfully.", "success")
         return redirect(url_for("main.dashboard"))

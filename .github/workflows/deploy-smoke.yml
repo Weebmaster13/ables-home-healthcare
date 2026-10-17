@@ -15,6 +15,11 @@ on:
       - "app.py"
       - "wsgi.py"
       - "routes.py"
+      - "config.py"
+      - "extensions.py"
+      - "models.py"
+      - "security.py"
+      - "notifications.py"
       - "requirements.txt"
   workflow_dispatch:
 
@@ -28,7 +33,7 @@ jobs:
       - name: Create throwaway local secrets (CI-only dummies, never production)
         run: |
           cat > .env.oracle <<'EOF'
-          SECRET_KEY=ci-smoke-test-only-not-a-secret
+          SECRET_KEY=ci-smoke-test-only-dummy-secret-key-0123456789
           DATABASE_URL=postgresql://ables:ci-smoke-test-only@db:5432/ables
           POSTGRES_USER=ables
           POSTGRES_PASSWORD=ci-smoke-test-only

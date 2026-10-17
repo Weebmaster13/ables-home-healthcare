@@ -53,10 +53,11 @@ database for real client, caregiver, or document data.
 Prepared deployment files:
 
 - `Procfile` starts the app with `gunicorn wsgi:app`
-- `render.yaml` can create a Render web service, PostgreSQL database, upload disk, and migration command
+- `render.yaml` is legacy (Render is no longer the production target); see `DEPLOYMENT.md`
 - `runtime.txt` and `.python-version` pin Python 3.12.10
 - `.env.production.example` lists production environment variables
 - `RAILWAY_DEPLOY.md` covers Railway-specific setup
+- `DEPLOYMENT.md` is the current production deployment guide (Oracle VPS / Docker)
 
 Render start command:
 

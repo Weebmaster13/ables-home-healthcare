@@ -1,3 +1,5 @@
+> **Superseded:** see [DEPLOYMENT.md](DEPLOYMENT.md) for the authoritative deployment guide.
+
 # Deploy Ables Home Healthcare to a GoDaddy VPS (self-managed Linux)
 
 > Do NOT touch GoDaddy DNS, delete Railway, migrate production data, or spend

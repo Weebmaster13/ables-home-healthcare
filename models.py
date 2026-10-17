@@ -205,6 +205,14 @@ class NotificationLog(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class LoginAttempt(db.Model):
+    """Persistent login-throttle state shared across workers/restarts."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(120), nullable=False, index=True)
+    attempted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class PortalMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -291,6 +299,11 @@ class CaregiverOnboardingItem(db.Model):
 # ---------------- USER LOADER ----------------
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    user = db.session.get(User, int(user_id))
+    # Reject deactivated accounts on every request so an existing session
+    # cannot outlive an administrator disabling the account.
+    if user is None or not user.is_active_account:
+        return None
+    return user
 
 

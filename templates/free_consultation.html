@@ -21,6 +21,7 @@
     <div class="col-lg-7">
         <form method="POST" class="contact-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% include "partials/honeypot.html" %}
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Name: First and Last</label>
