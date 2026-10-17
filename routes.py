@@ -1184,6 +1184,28 @@ def care_process():
     return render_template("care_process.html", consultation_steps=CONSULTATION_STEPS)
 
 
+def commit_or_flash_failure():
+    """Commit the current transaction, or roll back and flash a clear error.
+
+    Returns True when the write succeeded and False when it failed. A failed
+    public form submission must not surface as an unhandled 500: the visitor
+    gets an actionable message and the transaction is rolled back so no partial
+    record is left behind.
+    """
+    try:
+        db.session.commit()
+        return True
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Could not save public form submission")
+        flash(
+            "We could not save your submission because of a temporary problem. "
+            "Please try again or call the office at 301-455-3030.",
+            "danger",
+        )
+        return False
+
+
 def create_consultation_inquiry(reason="Scheduled consultation"):
     name = request.form.get("name", "").strip()
     email = request.form.get("email", "").strip()
@@ -1244,7 +1266,8 @@ def create_consultation_inquiry(reason="Scheduled consultation"):
         ]),
     )
     db.session.add(inquiry)
-    db.session.commit()
+    if not commit_or_flash_failure():
+        return None
     send_admin_notification(
         f"New {reason.lower()} request",
         f"Name: {inquiry.name}\nEmail: {inquiry.email}\nPhone: {inquiry.phone}\n{inquiry.message}",
@@ -1326,7 +1349,8 @@ def quick_message():
     )
 
     db.session.add(inquiry)
-    db.session.commit()
+    if not commit_or_flash_failure():
+        return safe_redirect(request.referrer, "main.contact")
     send_admin_notification(
         "New quick message from website chat",
         "\n".join([
@@ -1607,7 +1631,8 @@ def referrals():
         )
 
         db.session.add(referral)
-        db.session.commit()
+        if not commit_or_flash_failure():
+            return redirect(url_for("main.referrals"))
 
         send_admin_notification(
             "New Ables Home Healthcare referral",
@@ -1690,7 +1715,8 @@ def contact():
         )
 
         db.session.add(inquiry)
-        db.session.commit()
+        if not commit_or_flash_failure():
+            return redirect(url_for("main.contact"))
 
         send_admin_notification(
             "New Ables Home Healthcare website inquiry",
@@ -1806,7 +1832,8 @@ def employment_application():
         )
         db.session.add(application)
         db.session.add(inquiry)
-        db.session.commit()
+        if not commit_or_flash_failure():
+            return redirect(url_for("main.employment_application"))
 
         send_admin_notification(
             "New caregiver employment application",

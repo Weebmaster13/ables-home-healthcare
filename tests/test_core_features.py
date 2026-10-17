@@ -9,10 +9,11 @@ import uuid
 
 from werkzeug.security import generate_password_hash
 from werkzeug.datastructures import FileStorage
+import pytest
 
 from app import app
 from extensions import db
-from models import AdminRecoveryCode, Appointment, AuditLog, CaregiverApplication, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, User
+from models import AdminRecoveryCode, Appointment, AuditLog, CaregiverApplication, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from production_check import configured
 from routes import allowed_document, caregiver_double_bookings, save_private_upload, send_visit_reminder
 from backup_db import BACKUP_DIR, cleanup_old_backups
@@ -1630,6 +1631,99 @@ def test_role_changes_are_restricted_to_the_allowlist():
     assert response.status_code in (200, 302)
     with app.app_context():
         assert db.session.get(User, target.id).role != "superadmin"
+
+
+PUBLIC_FORM_SUBMISSIONS = [
+    (
+        "/contact",
+        {"name": "Ada", "email": "ada@example.com", "message": "Please call me about care."},
+        Inquiry,
+    ),
+    (
+        "/referrals",
+        {
+            "referral_source": "Hospital",
+            "source_phone": "301-555-0100",
+            "client_name": "Client A",
+        },
+        Referral,
+    ),
+    (
+        "/free-consultation",
+        {
+            "name": "Ada",
+            "email": "ada@example.com",
+            "phone": "301-555-0101",
+            "message": "Interested in care",
+        },
+        Inquiry,
+    ),
+    (
+        "/schedule-consultation",
+        {
+            "name": "Ada",
+            "email": "ada@example.com",
+            "phone": "301-555-0102",
+            "message": "Please schedule a visit",
+        },
+        Inquiry,
+    ),
+]
+
+
+@pytest.mark.parametrize("path,payload,model", PUBLIC_FORM_SUBMISSIONS)
+def test_public_form_commit_failure_returns_clean_error_not_500(path, payload, model, monkeypatch):
+    """A failed commit must roll back and show a clear error, never a 500.
+
+    The audit found the public form handlers called db.session.commit()
+    unguarded, so a database error surfaced as an unhandled exception with no
+    rollback and no message. This forces the commit to fail and checks the
+    visitor gets a redirect and that no partial record was stored.
+    """
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        before = model.query.count()
+
+    def failing_commit():
+        raise RuntimeError("simulated database failure")
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+    try:
+        with app.test_client() as client:
+            response = client.post(path, data=payload, follow_redirects=False)
+    finally:
+        monkeypatch.undo()
+
+    assert response.status_code < 500, f"{path} leaked a {response.status_code} error page"
+    assert response.status_code == 302
+
+    with app.app_context():
+        assert model.query.count() == before, f"{path} stored a partial record"
+
+
+def test_public_form_commit_failure_rolls_back_the_session(monkeypatch):
+    """The session must be rolled back, not left in a dirty/failed state."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    rolled_back = {"called": False}
+    original_rollback = db.session.rollback
+
+    def failing_commit():
+        raise RuntimeError("simulated database failure")
+
+    def tracking_rollback():
+        rolled_back["called"] = True
+        return original_rollback()
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+    monkeypatch.setattr(db.session, "rollback", tracking_rollback)
+    try:
+        with app.test_client() as client:
+            client.post("/contact", data={"name": "Ada", "email": "ada@example.com", "message": "Hi"})
+    finally:
+        monkeypatch.undo()
+
+    assert rolled_back["called"] is True
+
 
 
 
