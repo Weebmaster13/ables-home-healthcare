@@ -115,19 +115,25 @@ def test_a_workflow_runs_the_unit_tests_on_every_push():
 
 
 def test_ci_runs_the_live_backup_restore_drill():
-    """The live drill must run in CI, not only on a developer machine.
+    """The live drills must run in CI, not only on a developer machine.
 
-    Without MYSQL_TEST_URL the round-trip test skips, so the workflow needs a
-    real MariaDB service and that variable set, or the documented restore drill
-    is never actually executed by CI.
+    Without MYSQL_TEST_URL / POSTGRES_TEST_URL the round-trip tests skip, so
+    the workflow needs a real database service and the matching variable set,
+    or the documented restore drill is never actually executed by CI. Both
+    backends are covered: the MySQL/MariaDB drill and the PostgreSQL drill.
     """
     config = yaml.safe_load((ROOT / ".github" / "workflows" / "tests.yml").read_text())
     jobs = config["jobs"]
     live = [name for name, job in jobs.items() if "services" in job]
     assert live, "no CI job provides a database service for the live drill"
+    live_url_vars = {"MYSQL_TEST_URL", "POSTGRES_TEST_URL"}
+    covered = set()
     for name in live:
         envs = [step.get("env", {}) for step in jobs[name]["steps"]]
-        assert any("MYSQL_TEST_URL" in env for env in envs), name
+        job_vars = {var for env in envs for var in live_url_vars if var in env}
+        assert job_vars, f"{name} provides a database service but sets no live-test URL"
+        covered |= job_vars
+    assert covered == live_url_vars, f"live drills not covered for: {live_url_vars - covered}"
 
 
 def test_deployment_restore_uses_the_tested_client_url_helper():
