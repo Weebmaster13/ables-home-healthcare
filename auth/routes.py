@@ -18,6 +18,7 @@ from security import (
     password_fingerprint,
     password_is_breached,
     password_is_strong,
+    public_form_is_limited,
     record_login_failure,
     record_user_login_failure,
     admin_recovery_codes_enabled,
@@ -210,6 +211,12 @@ def forgot_password():
     dev_reset_url = session.pop("dev_password_reset_url", None)
 
     if request.method == "POST":
+        # Throttle reset requests per client: without this, anyone could use
+        # the endpoint to send unbounded reset emails to a known address.
+        if public_form_is_limited("password_reset"):
+            flash("Too many reset requests. Please wait a few minutes and try again.", "danger")
+            return redirect(url_for("auth.forgot_password"))
+
         email = request.form.get("email", "").strip().lower()
         user = User.query.filter_by(email=email).first()
 

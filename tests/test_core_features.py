@@ -1412,6 +1412,32 @@ def test_public_form_rate_limit_blocks_repeat_submissions():
         db.session.commit()
 
 
+def test_forgot_password_rate_limit_blocks_repeat_requests():
+    app.config["WTF_CSRF_ENABLED"] = False
+    from security import PUBLIC_FORM_LIMIT, LoginAttempt
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:password_reset:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+    with app.test_client() as client:
+        blocked = False
+        for _ in range(PUBLIC_FORM_LIMIT + 2):
+            response = client.post(
+                "/auth/forgot-password",
+                data={"email": "nobody@example.com"},
+                follow_redirects=True,
+            )
+            if b"Too many reset requests" in response.data:
+                blocked = True
+        # The endpoint must throttle repeated reset requests from one client.
+        assert blocked is True
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:password_reset:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+
 def test_admin_dashboard_shows_notification_failure_alert():
     app.config["WTF_CSRF_ENABLED"] = False
     app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
