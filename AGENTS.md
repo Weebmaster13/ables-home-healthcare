@@ -89,14 +89,23 @@ security fix in `tests/test_core_features.py`.
   requires `RESET_ALL_CONFIRM=yes` and refuses in production.
 - `load_user` rejects inactive accounts, so disabling a user invalidates
   existing sessions on the next request.
-- Restore drills: `pg_restore` exits 1 when it ignored non-fatal errors (for
-  example a version-skew GUC) even though the data loaded.
-  `backup_db._pg_restore_outcome` treats that specific case as success and
-  raises on every other non-zero exit. Do not "simplify" it back to
-  `returncode != 0`.
+- Restore drills: `pg_restore` exits 1 when it ignored errors, and prints
+  `errors ignored on restore: N` whenever it ignored *any* — including fatal
+  ones like `relation "x" already exists`. That summary is not success.
+  `backup_db._pg_restore_outcome` accepts exit 1 only when every ignored error
+  is the understood version-skew GUC (`unrecognized configuration parameter`
+  from a `SET`), and `_verify_postgres_restore` then confirms the dump's tables
+  exist in the target. Anything else raises. Do not widen this to a substring
+  match on the summary line; that would call a partial restore healthy.
 - Staging verification runs against the real stack, not the test client:
   `tools/staging_recovery.py` prints one fresh admin recovery code, and
   `tools/staging_verify.py` drives gunicorn + MariaDB + MailHog + ClamAV over
   HTTPS. `--password` is required (no committed default). See
   `docs/STAGING_RELEASE_EVIDENCE.md` for the owner-controlled checks, exact
   configuration requirements, rollback, and remaining blockers.
+- Admin routes are guarded in the body (`require_role("admin")` /
+  `require_permission(...)`) after `@login_required`, not by a decorator.
+  `tests/test_admin_authorization_sweep.py` enumerates every `/admin/` route
+  from the URL map and checks anonymous, non-admin, and admin access, so a new
+  route is covered automatically. Keep that sweep green; it was mutation-checked
+  to confirm it fails when a guard is missing.

@@ -947,6 +947,51 @@ def test_external_scanner_receives_complete_file(tmp_path):
     assert captured.read_bytes() == payload
 
 
+def test_external_scanner_receives_a_megabyte_upload_intact(tmp_path):
+    """The whole file must reach the scanner, however large. A size that is not
+    a power of two makes any silent truncation to a buffer boundary visible."""
+    from security import scan_upload_stream
+
+    captured = tmp_path / "seen.bin"
+    with app.app_context():
+        original = app.config.get("VIRUS_SCAN_COMMAND")
+        app.config["VIRUS_SCAN_COMMAND"] = f"tee {captured}"
+        try:
+            payload = bytes(range(256)) * 4096 + b"tail-marker"
+            file_storage = FileStorage(stream=BytesIO(payload), filename="large.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config["VIRUS_SCAN_COMMAND"] = original
+    seen = captured.read_bytes()
+    assert clean is True
+    assert len(seen) == len(payload) == 256 * 4096 + len(b"tail-marker")
+    assert seen == payload
+
+
+def test_eicar_deep_inside_a_large_file_is_rejected():
+    """A payload near the start is easy; place it far past any sample window."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        payload = b"J" * 900_000 + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" + b"J" * 1000
+        file_storage = FileStorage(stream=BytesIO(payload), filename="deep.pdf")
+        clean, message = scan_upload_stream(file_storage)
+    assert clean is False
+    assert "EICAR" in message or "Virus" in message
+
+
+def test_eicar_straddling_a_read_boundary_is_rejected():
+    """A signature that begins just before the 4096-byte mark must still match."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        payload = b"J" * 4090 + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" + b"J" * 50
+        file_storage = FileStorage(stream=BytesIO(payload), filename="straddle.pdf")
+        clean, message = scan_upload_stream(file_storage)
+    assert clean is False
+    assert "EICAR" in message or "Virus" in message
+
+
 def test_production_without_scanner_rejects_upload():
     """Fail closed: no scanner in production means the upload is rejected."""
     from security import scan_upload_stream

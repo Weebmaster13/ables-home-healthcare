@@ -233,24 +233,108 @@ def _postgres_dump_credentials(url):
     return host, port, user, password, database
 
 
-_PG_RESTORE_WARNING_MARKER = "errors ignored on restore"
+_PG_RESTORE_IGNORED_COUNT = re.compile(r"errors ignored on restore: (\d+)")
+_PG_RESTORE_UNKNOWN_GUC = re.compile(r'unrecognized configuration parameter "([^"]+)"')
+_PG_RESTORE_SET_COMMAND = re.compile(r"Command was:\s*SET\s+\S+\s*=", re.IGNORECASE)
+
+
+def _pg_restore_ignorable_errors(stderr_text):
+    """Return the ignored errors that are safe to ignore, else None.
+
+    pg_restore's ``errors ignored on restore: N`` warning is a *summary*: it is
+    printed whenever any error was ignored, including fatal ones such as
+    ``relation "x" already exists`` or a duplicate-key COPY failure. Treating
+    that summary as success would report a partially restored database as
+    healthy, so every individual error is inspected instead.
+
+    The only condition accepted here is a version-skew GUC: a newer pg_dump
+    writes ``SET transaction_timeout = 0;`` and an older server answers
+    ``unrecognized configuration parameter``. That statement does not carry
+    data, so ignoring it is safe. Anything else returns None (not ignorable).
+    """
+    blocks = stderr_text.split("pg_restore: error:")[1:]
+    if not blocks:
+        return None
+    ignorable = []
+    for block in blocks:
+        block = block.split("\npg_restore:", 1)[0]
+        match = _PG_RESTORE_UNKNOWN_GUC.search(block)
+        if match and _PG_RESTORE_SET_COMMAND.search(block):
+            ignorable.append(f'unrecognized configuration parameter "{match.group(1)}"')
+            continue
+        return None
+    return ignorable
 
 
 def _pg_restore_outcome(returncode, stderr, stdout):
     """Classify a pg_restore run into (ok, detail).
 
-    pg_restore exits 1 when it ignored one or more non-fatal errors, for
-    example a GUC that a newer pg_dump wrote but an older server does not
-    recognise. The data still loads, so that specific case is success. Any
-    other non-zero exit, or exit 1 without the ignored-errors marker, is a
-    real failure.
+    Success requires exit 0, or exit 1 where *every* ignored error is the
+    understood version-skew GUC above. A summary warning alone is never enough,
+    so a partial restore stays a failure. ``detail`` is the failure text, or a
+    short description of what was safely ignored.
     """
     if returncode == 0:
         return True, ""
-    detail = (stderr or stdout or b"").decode("utf-8", "replace").strip()
-    if returncode == 1 and _PG_RESTORE_WARNING_MARKER in detail:
-        return True, detail
-    return False, detail
+    stderr_text = (stderr or b"").decode("utf-8", "replace")
+    detail = (stderr_text or (stdout or b"").decode("utf-8", "replace")).strip()
+    if returncode != 1:
+        return False, detail
+    if _PG_RESTORE_IGNORED_COUNT.search(stderr_text) is None:
+        return False, detail
+    ignorable = _pg_restore_ignorable_errors(stderr_text)
+    if ignorable is None:
+        return False, detail
+    return True, "; ".join(ignorable)
+
+
+def _postgres_dump_tables(dump_path):
+    """Table names the dump should create, from its table of contents."""
+    client = shutil.which("pg_restore")
+    if client is None:
+        return None
+    result = subprocess.run(
+        [client, "--list", str(dump_path)], capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        return None
+    names = set()
+    for line in result.stdout.decode("utf-8", "replace").splitlines():
+        # "218; 1259 16386 TABLE public client ables" -> capture the table name.
+        # Skip "TABLE DATA" / "TABLE ATTACH", which name the schema next.
+        match = re.match(
+            r"^\d+;\s+\d+\s+\d+\s+(?:TABLE|VIEW)\s+(?!DATA\b)(?!ATTACH\b)"
+            r"(\S+)\s+(\S+)\s+(\S+)",
+            line,
+        )
+        if match:
+            names.add(match.group(2))
+    return names
+
+
+def _verify_postgres_restore(target_url, expected_tables):
+    """Confirm the target actually holds the tables the dump defines.
+
+    pg_restore can exit 0 or 1 while silently having loaded nothing (for
+    example a mismatched target), so success is only reported once the dumped
+    tables are present. Returns (ok, detail).
+    """
+    if not expected_tables:
+        return True, "no tables in the dump to verify"
+    try:
+        from sqlalchemy import create_engine, inspect
+    except ImportError:  # pragma: no cover - sqlalchemy is a hard dependency
+        return True, "sqlalchemy unavailable; table verification skipped"
+    engine = create_engine(_normalize_url(target_url))
+    try:
+        inspector = inspect(engine)
+        present = set(inspector.get_table_names()) | set(inspector.get_view_names())
+    finally:
+        engine.dispose()
+    missing = sorted(expected_tables - present)
+    if missing:
+        return False, "missing after restore: " + ", ".join(missing)
+    return True, f"verified {len(expected_tables)} table(s) present"
 
 
 def restore_postgres_dump(dump_path, target_url, allow_live=False):
@@ -312,14 +396,19 @@ def restore_postgres_dump(dump_path, target_url, allow_live=False):
     ok, detail = _pg_restore_outcome(result.returncode, result.stderr, result.stdout)
     if not ok:
         raise RuntimeError(f"Restore failed (exit {result.returncode}): {detail[:300]}")
+
+    verified, verify_detail = _verify_postgres_restore(target_url, _postgres_dump_tables(dump_path))
+    if not verified:
+        raise RuntimeError(f"Restore reported success but verification failed: {verify_detail}")
+
     if detail:
-        # Non-fatal errors were ignored (for example a version-skew GUC); the
-        # data loaded, so report success but surface what was skipped.
+        # Only the understood version-skew GUC was ignored; the data loaded and
+        # the tables are present, so report success but surface what was skipped.
         return True, (
             f"Restored {dump_path.name} into {database} "
-            f"({_PG_RESTORE_WARNING_MARKER}: {detail.splitlines()[0][:120]})."
+            f"({detail}; {verify_detail})."
         )
-    return True, f"Restored {dump_path.name} into {database}."
+    return True, f"Restored {dump_path.name} into {database} ({verify_detail})."
 
 
 def restore_mysql_dump(dump_path, target_url, allow_live=False):

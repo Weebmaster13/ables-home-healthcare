@@ -95,6 +95,17 @@ received all 9,018 bytes. This closes the "first 4 KB only" defect: the scanner
 now receives the complete file. Without a configured scanner, production fails
 closed (uploads rejected) unless `UPLOAD_SCAN_FAIL_OPEN=true` is set.
 
+Unit coverage was widened so a truncation anywhere would be caught, not only a
+sample that happens to fit the first buffer:
+
+* `test_external_scanner_receives_a_megabyte_upload_intact` - a 1,048,576-byte
+  body with a non-power-of-two tail is compared byte-for-byte against what the
+  scanner command actually read.
+* `test_eicar_deep_inside_a_large_file_is_rejected` - EICAR placed 900,000 bytes
+  in, far past any 4 KB sample window.
+* `test_eicar_straddling_a_read_boundary_is_rejected` - a signature that starts
+  at byte 4,090 and crosses the old 4,096-byte boundary.
+
 ### 5. Database recovery
 
 Command (production backend):
@@ -110,14 +121,50 @@ with exact row-count parity (`user`, `inquiry`, `client_document`,
 `--restore-to` guard refuses to target the live `DATABASE_URL` unless
 `--allow-live` is passed.
 
-The PostgreSQL path was also drilled and exposed a false-failure defect:
-`pg_restore` exits 1 for ignored non-fatal errors (for example a version-skew
-GUC) even though the data loads. `backup_db.restore_postgres_dump` now reports
-that case as success and still raises on any genuine failure.
+The PostgreSQL path was drilled too, and it exposed a defect in how a restore
+result is classified. `pg_restore` exits 1 and prints
+`errors ignored on restore: N` whenever it ignored *any* error, and that
+includes data-losing ones such as `relation "x" already exists` or a COPY that
+hit a duplicate key. Treating that summary line as success would report a
+partially restored database as healthy.
+
+`backup_db.restore_postgres_dump` now accepts exit 1 only when every ignored
+error is the understood version-skew GUC (`unrecognized configuration parameter`
+from a `SET`, which carries no data), and then confirms the dump's tables are
+actually present in the target before returning success. Anything else raises.
+
+Verified live on a PostgreSQL 17 dump restored into a PostgreSQL 16 server (the
+genuine version-skew case): the call returned success with the message
+`... (unrecognized configuration parameter "transaction_timeout"; verified 2
+table(s) present)`, and `SELECT id, name FROM patients` returned the seeded
+rows. A data-losing restore (restoring over existing objects) and a bad-target
+restore both raise.
+
+### 6. Admin route authorization
+
+A manual spot check of a few admin pages does not establish that the rest are
+guarded. `tests/test_admin_authorization_sweep.py` enumerates every route under
+`/admin/` from the live URL map and drives each one three ways:
+
+* anonymous: must redirect to login or return 401/403, never admin content;
+* a logged-in non-admin: must return 403;
+* a real administrator: must not be denied (a 400/404/500 from missing test data
+  is tolerated, a 403 is not).
+
+Coverage is by construction: a newly registered `/admin/...` route is swept the
+moment it exists, so a route that forgets its `require_role`/`require_permission`
+call fails the test. The sweep was mutation-checked - removing one guard from
+`admin_users` made `test_non_admin_is_refused_every_admin_route` fail with
+`GET /admin/users -> 200` - so it is known to detect the failure mode, not just
+pass. All 55 admin routes pass.
 
 ## Verification commands
 
 ```
+# Admin authorization sweep: every /admin/* route as anonymous, non-admin,
+# and admin (enumerated from the live URL map, so new routes are covered).
+python -m pytest tests/test_admin_authorization_sweep.py -q
+
 # Full automated suite (default backend)
 python -m pytest -q
 

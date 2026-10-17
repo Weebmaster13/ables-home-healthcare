@@ -152,6 +152,10 @@ def test_postgres_restore_passes_password_via_env_not_argv(monkeypatch, tmp_path
     captured = {}
 
     def fake_run(cmd, env=None, capture_output=True, check=False):
+        if "--list" in cmd:
+            # The post-restore verification lists the TOC first; only the
+            # actual restore invocation carries the connection flags.
+            return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
         captured["cmd"] = cmd
         captured["env"] = env
         return backup_db.subprocess.CompletedProcess(cmd, 0, b"", b"")
@@ -161,6 +165,9 @@ def test_postgres_restore_passes_password_via_env_not_argv(monkeypatch, tmp_path
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:livepw@dbhost:5432/ables")
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        backup_db, "_verify_postgres_restore", lambda url, expected: (True, "verified")
+    )
 
     ok, message = backup_db.restore_postgres_dump(
         dump, "postgresql://restorer:scratchpw@dbhost:5432/ables_restore"
@@ -173,44 +180,111 @@ def test_postgres_restore_passes_password_via_env_not_argv(monkeypatch, tmp_path
     assert str(dump) in captured["cmd"]
 
 
-def test_postgres_restore_treats_ignored_errors_as_success(monkeypatch, tmp_path):
-    """pg_restore exits 1 for ignored non-fatal errors (e.g. a version-skew
-    GUC) even though the data loads. That must be reported as success, not as
-    a failed recovery drill."""
-    def fake_run(cmd, env=None, capture_output=True, check=False):
-        return backup_db.subprocess.CompletedProcess(
-            cmd, 1, b"",
-            b'pg_restore: error: could not execute query: ERROR:  '
-            b'unrecognized configuration parameter "transaction_timeout"\n'
-            b'pg_restore: warning: errors ignored on restore: 1\n',
-        )
+def _fake_pg_restore(monkeypatch, tmp_path, stderr, returncode=1, tables=("client",)):
+    """Patch pg_restore so restore_postgres_dump sees ``stderr``.
 
+    The TOC listing returns ``tables`` so the post-restore verification can run
+    against a patched inspector. Returns the dump path.
+    """
     dump = tmp_path / "database.dump"
     dump.write_bytes(b"PGDMP fake")
+
+    def fake_run(cmd, env=None, capture_output=True, check=False):
+        if "--list" in cmd:
+            toc = "".join(
+                f"218; 1259 {16386 + i} TABLE public {name} ables\n"
+                for i, name in enumerate(tables)
+            )
+            return backup_db.subprocess.CompletedProcess(cmd, 0, toc.encode(), b"")
+        return backup_db.subprocess.CompletedProcess(cmd, returncode, b"", stderr)
+
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
     monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
     monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        backup_db, "_verify_postgres_restore", lambda url, expected: (True, "verified")
+    )
+    return dump
+
+
+def test_postgres_restore_accepts_only_a_version_skew_guc(monkeypatch, tmp_path):
+    """The one understood benign error: a newer pg_dump's SET of a GUC that an
+    older server does not know. It carries no data, so it is safe to ignore."""
+    dump = _fake_pg_restore(
+        monkeypatch, tmp_path,
+        b'pg_restore: error: could not execute query: ERROR:  '
+        b'unrecognized configuration parameter "transaction_timeout"\n'
+        b'Command was: SET transaction_timeout = 0;\n'
+        b'pg_restore: warning: errors ignored on restore: 1\n',
+    )
 
     ok, message = backup_db.restore_postgres_dump(
         dump, "postgresql://u:p@dbhost:5432/ables_restore"
     )
 
     assert ok is True
-    assert "errors ignored" in message
+    assert 'unrecognized configuration parameter "transaction_timeout"' in message
+    assert "errors ignored" not in message
+
+
+def test_postgres_restore_rejects_ignored_errors_that_lost_data(monkeypatch, tmp_path):
+    """A summary warning alone is NOT success. Real errors such as a table that
+    already exists, or a COPY that hit a duplicate key, mean data was lost, so
+    the drill must fail even though pg_restore printed the same summary line."""
+    dump = _fake_pg_restore(
+        monkeypatch, tmp_path,
+        b'pg_restore: error: could not execute query: ERROR:  '
+        b'relation "client" already exists\n'
+        b'Command was: CREATE TABLE public.client (\n    id integer NOT NULL\n);\n'
+        b'pg_restore: error: COPY failed for table "client": ERROR:  duplicate '
+        b'key value violates unique constraint "client_pkey"\n'
+        b'pg_restore: warning: errors ignored on restore: 2\n',
+    )
+
+    with pytest.raises(RuntimeError, match="Restore failed"):
+        backup_db.restore_postgres_dump(
+            dump, "postgresql://u:p@dbhost:5432/ables_restore"
+        )
+
+
+def test_postgres_restore_rejects_mixed_guc_and_real_error(monkeypatch, tmp_path):
+    """One ignorable GUC does not excuse a second, data-losing error."""
+    dump = _fake_pg_restore(
+        monkeypatch, tmp_path,
+        b'pg_restore: error: could not execute query: ERROR:  '
+        b'unrecognized configuration parameter "transaction_timeout"\n'
+        b'Command was: SET transaction_timeout = 0;\n'
+        b'pg_restore: error: could not execute query: ERROR:  '
+        b'relation "client" already exists\n'
+        b'Command was: CREATE TABLE public.client (\n    id integer NOT NULL\n);\n'
+        b'pg_restore: warning: errors ignored on restore: 2\n',
+    )
+
+    with pytest.raises(RuntimeError, match="Restore failed"):
+        backup_db.restore_postgres_dump(
+            dump, "postgresql://u:p@dbhost:5432/ables_restore"
+        )
+
+
+def test_postgres_restore_raises_when_a_table_is_missing_after_restore(monkeypatch, tmp_path):
+    """Exit 0 is not proof on its own: the dumped tables must actually exist."""
+    dump = _fake_pg_restore(monkeypatch, tmp_path, b"", returncode=0, tables=("client",))
+    monkeypatch.setattr(
+        backup_db, "_verify_postgres_restore",
+        lambda url, expected: (False, "missing after restore: client"),
+    )
+
+    with pytest.raises(RuntimeError, match="verification failed"):
+        backup_db.restore_postgres_dump(
+            dump, "postgresql://u:p@dbhost:5432/ables_restore"
+        )
 
 
 def test_postgres_restore_still_raises_on_a_real_failure(monkeypatch, tmp_path):
-    """Exit 1 without the ignored-errors marker is a genuine failure."""
-    def fake_run(cmd, env=None, capture_output=True, check=False):
-        return backup_db.subprocess.CompletedProcess(
-            cmd, 1, b"", b"pg_restore: error: connection to server failed\n"
-        )
-
-    dump = tmp_path / "database.dump"
-    dump.write_bytes(b"PGDMP fake")
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
-    monkeypatch.setattr(backup_db.shutil, "which", lambda name: "/usr/bin/pg_restore")
-    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    """Exit 1 without the ignored-errors summary is a genuine failure."""
+    dump = _fake_pg_restore(
+        monkeypatch, tmp_path, b"pg_restore: error: connection to server failed\n"
+    )
 
     with pytest.raises(RuntimeError, match="Restore failed"):
         backup_db.restore_postgres_dump(
@@ -603,8 +677,9 @@ def test_live_postgres_backup_and_restore_round_trip():
                 with pytest.raises(RuntimeError, match="Refusing to restore"):
                     backup_db.restore_postgres_dump(backup_path, source_url)
 
-                restored, _ = backup_db.restore_postgres_dump(backup_path, scratch_url)
+                restored, message = backup_db.restore_postgres_dump(backup_path, scratch_url)
                 assert restored is True
+                assert "verified" in message
 
                 with scratch.connect() as conn:
                     rows = conn.execute(text("SELECT id, name FROM patients ORDER BY id")).fetchall()
