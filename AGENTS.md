@@ -12,7 +12,7 @@ Entry points: `wsgi.py` (production, adds proxy-header handling) and
 ## Run tests
 
 ```bash
-python -m pytest -q          # must stay green (currently 142 passed, 2 skipped)
+python -m pytest -q          # must stay green (currently 156 passed, 2 skipped)
 ```
 
 Two live MySQL/MariaDB tests skip unless `MYSQL_TEST_URL` is set; CI runs them
