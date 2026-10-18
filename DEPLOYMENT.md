@@ -286,3 +286,12 @@ tunnel/submit each of: /contact, /free-consultation, /referrals,
 
 Then verify HTTPS, DNS, migrations applied, uploads writable, and that
 `/healthz` returns only `{"status": "ok"}`.
+
+## Owner action checklist
+
+The remaining launch blockers are configuration and environment, not code.
+`OWNER_ACTION_CHECKLIST.md` maps each one — the real off-site destination, live
+SMTP, durable private upload storage, the antivirus scanner, the four owner
+attestations, and the final release review — to its exact setting, verification
+command, expected evidence, and rollback. Use it alongside this file; it changes
+nothing in production and weakens no readiness check.

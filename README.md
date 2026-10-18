@@ -120,6 +120,10 @@ python deploy_check.py --production
 python test_email.py
 ```
 
+See `OWNER_ACTION_CHECKLIST.md` for the owner-owned launch steps (real off-site
+destination, live SMTP, durable upload storage, antivirus scanner, attestation
+flags) with the exact settings, verification commands, evidence, and rollback.
+
 ## Database Migrations
 
 The app now includes Flask-Migrate/Alembic. For production schema changes, prefer:

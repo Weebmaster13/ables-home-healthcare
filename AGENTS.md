@@ -151,3 +151,11 @@ security fix in `tests/test_core_features.py`.
   from the URL map and checks anonymous, non-admin, and admin access, so a new
   route is covered automatically. Keep that sweep green; it was mutation-checked
   to confirm it fails when a guard is missing.
+- Owner-owned launch blockers (real off-site destination, live SMTP, durable
+  private upload storage, the antivirus scanner, the four attestation flags, and
+  the final release review) are configuration/environment, not code.
+  `OWNER_ACTION_CHECKLIST.md` is the authoritative list: each item gives the exact
+  setting, the verification command, the expected evidence, and the rollback.
+  Production is GoDaddy cPanel + MySQL/MariaDB (`DEPLOYMENT.md`); do not configure
+  a second platform. Never weaken `production_check.py` or `/admin/launch-checklist`
+  to make a gate pass — set a flag only after the review it names is done.
