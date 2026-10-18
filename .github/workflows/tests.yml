@@ -158,6 +158,8 @@ jobs:
           sudo chmod 700 /home/offsite
           sudo chmod 600 /home/offsite/.ssh/authorized_keys
           sudo ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key_drill
+          # sshd refuses to start without its privilege-separation directory.
+          sudo mkdir -p /run/sshd
           cat > "$ROOT/sshd_config" <<EOF
           Port 2222
           ListenAddress 127.0.0.1
