@@ -110,7 +110,15 @@ security fix in `tests/test_core_features.py`.
   taken, a per-table fingerprint (row count plus a SHA-256 over every value) is
   recorded beside the dump and travels with it, so a restore is verified against
   what the backup contains, not just its row counts — and it stays authoritative
-  even when the source database no longer exists. Without a fingerprint the
+  even when the source database no longer exists. The fingerprint is canonical
+  (type-tagged values, `None` distinct from `''`, rows read in an explicit order
+  so physical row order does not matter), HMAC-authenticated with
+  `BACKUP_FINGERPRINT_KEY` (or a domain-separated `SECRET_KEY` derivation), and
+  required to cover every table the dump carried data for: a tampered, unsigned,
+  or incomplete fingerprint fails the restore rather than falling back to the
+  weaker check. Keep `BACKUP_FINGERPRINT_KEY` stable and backed up — rotating it
+  (or `SECRET_KEY` with no dedicated key) makes older backups unverifiable.
+  Without a fingerprint the
   check falls back to comparing row counts against the live source, and when the
   source is gone, to requiring that tables the dump carried data for are
   non-empty. A restore that created the tables but lost or altered rows is

@@ -104,6 +104,13 @@ CHECKS = [
         "Set VIRUS_SCAN_COMMAND (for example: clamdscan --stream) so uploads are really scanned.",
     ),
     (
+        "Stable backup fingerprint key",
+        lambda c: configured(c.get("BACKUP_FINGERPRINT_KEY")),
+        "Set BACKUP_FINGERPRINT_KEY to a stable, backed-up value. It authenticates "
+        "backup fingerprints; without it the key is derived from SECRET_KEY, so "
+        "rotating SECRET_KEY would make older backups unverifiable.",
+    ),
+    (
         "Durable upload storage",
         lambda c: bool(c.get("UPLOAD_FOLDER")) and not str(c.get("UPLOAD_FOLDER", "")).startswith(("/tmp", "/var/tmp")),
         "Point UPLOAD_FOLDER at persistent storage; /tmp is wiped on restart or redeploy.",

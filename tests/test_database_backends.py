@@ -718,11 +718,13 @@ def test_live_postgres_backup_and_restore_round_trip():
                 # Tamper with the recorded fingerprint: the restored data no
                 # longer matches what the backup claims it contains, and that
                 # must be rejected even though every row count still matches.
+                # The fingerprint is HMAC-signed, so editing it breaks the MAC
+                # and the restore is refused before any content comparison.
                 sidecar = Path(str(backup_path) + ".fingerprint.json")
                 recorded = json.loads(sidecar.read_text(encoding="utf-8"))
-                recorded["patients"]["sha256"] = "0" * 64
+                recorded["fingerprint"]["patients"]["sha256"] = "0" * 64
                 sidecar.write_text(json.dumps(recorded), encoding="utf-8")
-                with pytest.raises(RuntimeError, match="content mismatch"):
+                with pytest.raises(RuntimeError, match="authenticated"):
                     backup_db.restore_postgres_dump(backup_path, scratch_url)
 
                 # Without a fingerprint, verification falls back to comparing
@@ -953,6 +955,178 @@ def test_cell_bytes_distinguishes_none_from_empty_and_keeps_float_precision():
     assert backup_db._cell_bytes(b"\x00\x01") != backup_db._cell_bytes("")
 
 
+def test_cell_bytes_handles_decimal_and_memoryview_distinctly():
+    """Explicit numeric/byte types must not collide with other types."""
+    from decimal import Decimal
+
+    assert backup_db._cell_bytes(Decimal("10.50")) == backup_db._cell_bytes(Decimal("10.5"))
+    assert backup_db._cell_bytes(Decimal("10.50")) != backup_db._cell_bytes("10.5")
+    assert backup_db._cell_bytes(Decimal("1")) != backup_db._cell_bytes(1)
+    assert backup_db._cell_bytes(memoryview(b"ab")) == backup_db._cell_bytes(b"ab")
+
+
+def test_fingerprint_is_order_independent(tmp_path, monkeypatch):
+    """Canonical hashing: identical contents must fingerprint identically.
+
+    Two databases with the same rows inserted in different physical orders must
+    produce the same fingerprint, otherwise a perfectly good restore could be
+    rejected purely because the dump reordered the rows. The table has no
+    primary key, so the storage order follows insertion order and only the
+    digest's explicit ordering can make the two fingerprints agree.
+    """
+    from sqlalchemy import create_engine, text
+
+    first = tmp_path / "first.db"
+    second = tmp_path / "second.db"
+
+    engine = create_engine(f"sqlite:///{first}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada'), (2, 'Grace'), (3, 'Linus')"))
+    engine.dispose()
+
+    # Same rows, inserted in a different order (physical order differs).
+    engine = create_engine(f"sqlite:///{second}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (3, 'Linus'), (1, 'Ada'), (2, 'Grace')"))
+    engine.dispose()
+
+    first_fp = backup_db._database_fingerprint(f"sqlite:///{first}")
+    second_fp = backup_db._database_fingerprint(f"sqlite:///{second}")
+    assert first_fp["patients"]["rows"] == second_fp["patients"]["rows"] == 3
+    assert first_fp["patients"]["sha256"] == second_fp["patients"]["sha256"]
+
+
+def test_fingerprint_is_signed_and_a_tampered_one_is_rejected(tmp_path, monkeypatch):
+    """Fingerprint integrity: a tampered sidecar must fail, not be trusted.
+
+    The sidecar is authenticated with an HMAC. Editing a recorded value without
+    the key breaks the MAC, and verification must refuse rather than accept the
+    forged fingerprint (or silently downgrade to the weaker row-count check).
+    """
+    from sqlalchemy import create_engine, text
+
+    monkeypatch.setenv("SECRET_KEY", "a" * 40)
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada')"))
+    engine.dispose()
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    backup_db._write_fingerprint(dump, {"patients": {"rows": 1, "sha256": "deadbeef"}})
+
+    sidecar = Path(str(dump) + ".fingerprint.json")
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["mac"], "the fingerprint must be signed when a key is configured"
+    # Forge the recorded hash, leaving the old MAC in place.
+    payload["fingerprint"]["patients"]["sha256"] = "0" * 64
+    sidecar.write_text(json.dumps(payload), encoding="utf-8")
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", dump, objects)
+    assert ok is False
+    assert "authenticated" in detail
+
+
+def test_unsigned_fingerprint_is_rejected_when_a_key_is_configured(tmp_path, monkeypatch):
+    """Downgrade protection: stripping the MAC must not bypass verification."""
+    from sqlalchemy import create_engine, text
+
+    monkeypatch.setenv("SECRET_KEY", "b" * 40)
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada')"))
+    engine.dispose()
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    # A legacy bare fingerprint, as an attacker would write it to dodge the MAC.
+    Path(str(dump) + ".fingerprint.json").write_text(
+        json.dumps({"patients": {"rows": 1, "sha256": "deadbeef"}}), encoding="utf-8"
+    )
+
+    objects = {"tables": {"patients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", dump, objects)
+    assert ok is False
+    assert "authenticated" in detail
+
+
+def test_fingerprint_missing_a_table_entry_is_rejected(tmp_path, monkeypatch):
+    """Complete coverage: a fingerprint that omits a data table must fail.
+
+    Otherwise a table could be silently excluded from verification while the
+    restore still reported success.
+    """
+    from sqlalchemy import create_engine, text
+
+    target = tmp_path / "target.db"
+    engine = create_engine(f"sqlite:///{target}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("CREATE TABLE clients (id INTEGER PRIMARY KEY, name TEXT)"))
+        conn.execute(text("INSERT INTO patients VALUES (1, 'Ada')"))
+        conn.execute(text("INSERT INTO clients VALUES (1, 'Acme')"))
+    engine.dispose()
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    # Record a fingerprint that only covers 'patients'.
+    backup_db._write_fingerprint(
+        dump, {"patients": backup_db._database_fingerprint(f"sqlite:///{target}")["patients"]}
+    )
+
+    objects = {"tables": {"patients", "clients"}, "indexes": set(), "constraints": set(),
+               "sequences": set(), "data_tables": {"patients", "clients"}}
+    ok, detail = backup_db._verify_restored_database(f"sqlite:///{target}", dump, objects)
+    assert ok is False
+    assert "incomplete" in detail and "clients" in detail
+
+
+def test_fingerprint_key_matches_between_cli_and_app_env(tmp_path, monkeypatch):
+    """A CLI-signed fingerprint must verify with the same key the app uses.
+
+    The CLI loads the same environment file as the app; if it did not, a backup
+    made from the shell could be signed with no key (or a different one) and be
+    rejected as unauthenticated by the app that must verify it.
+    """
+    monkeypatch.setenv("BACKUP_FINGERPRINT_KEY", "shared-key-value")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    # The dedicated key wins regardless of SECRET_KEY.
+    assert backup_db._fingerprint_key() == b"shared-key-value"
+
+    dump = tmp_path / "database.dump"
+    dump.write_bytes(b"PGDMP fake")
+    backup_db._write_fingerprint(dump, {"patients": {"rows": 1, "sha256": "abc"}})
+    # Reading it back with the same environment authenticates successfully.
+    assert backup_db._read_fingerprint(dump) == {"patients": {"rows": 1, "sha256": "abc"}}
+
+    # A different key must not authenticate the same sidecar.
+    monkeypatch.setenv("BACKUP_FINGERPRINT_KEY", "some-other-key")
+    with pytest.raises(backup_db.FingerprintIntegrityError):
+        backup_db._read_fingerprint(dump)
+
+
+def test_fingerprint_key_falls_back_to_secret_key(tmp_path, monkeypatch):
+    """With no dedicated key, SECRET_KEY (domain-separated) is the fallback."""
+    monkeypatch.delenv("BACKUP_FINGERPRINT_KEY", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "s" * 40)
+    key = backup_db._fingerprint_key()
+    assert key is not None
+    assert key != b"s" * 40, "the session key must not be reused verbatim"
+    assert key == backup_db._fingerprint_key()
+
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    assert backup_db._fingerprint_key() is None
+
+
 def test_backup_archive_carries_the_fingerprint(tmp_path, monkeypatch):
     """The zip a user uploads off-site must include the fingerprint sidecar."""
     import zipfile
@@ -1014,7 +1188,10 @@ def test_cli_restore_extracts_fingerprint_from_the_zip(tmp_path, monkeypatch):
     backup_path = tmp_path / "ablehome-full-20260101-000000.zip"
     with zipfile.ZipFile(backup_path, "w") as archive:
         archive.writestr("database.dump", b"PGDMP fake")
-        archive.writestr("database.fingerprint.json", '{"patients": {"rows": 2, "sha256": "abc"}}')
+        archive.writestr(
+            "database.fingerprint.json",
+            backup_db._fingerprint_member_bytes({"patients": {"rows": 2, "sha256": "abc"}}),
+        )
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@dbhost:5432/ables")
     monkeypatch.setattr(backup_db, "_dispatch_backup", lambda url, include_uploads=True: backup_path)

@@ -123,6 +123,10 @@ class Config:
     TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "")
     ENABLE_SMS_REMINDERS = env_bool("ENABLE_SMS_REMINDERS", False)
     VIRUS_SCAN_COMMAND = os.environ.get("VIRUS_SCAN_COMMAND", "")
+    # Authenticates backup fingerprints. Defaults to a value derived from
+    # SECRET_KEY, so it should be set explicitly and kept stable in production;
+    # rotating it makes backups fingerprinted under the old key unverifiable.
+    BACKUP_FINGERPRINT_KEY = os.environ.get("BACKUP_FINGERPRINT_KEY", "")
     # When production has no external antivirus scanner, reject uploads by
     # default (fail closed). Set UPLOAD_SCAN_FAIL_OPEN=true only to accept
     # unscanned uploads after the owner has approved that documented risk.

@@ -1,6 +1,8 @@
 from datetime import date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -12,6 +14,18 @@ import zipfile
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "instance" / "ablehome.db"
+
+# Load the same environment file the web app uses, so a fingerprint written by
+# this CLI is signed with the same key the app verifies it with. Without this a
+# backup made from the shell could be signed with no key (or a different one)
+# and then be rejected as unauthenticated by the app.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(BASE_DIR, os.environ.get("ENV_FILE", ".env")))
+except ImportError:  # pragma: no cover - python-dotenv is a hard dependency of config
+    pass
+
 BACKUP_DIR = BASE_DIR / "backups"
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_FOLDER") or (BASE_DIR / "instance" / "uploads"))
 
@@ -103,10 +117,7 @@ def create_postgres_backup(include_uploads=True):
     backup_path = BACKUP_DIR / f"ablehome-full-{timestamp}.zip"
     with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.write(dump_path, arcname="database.dump")
-        archive.writestr(
-            "database.fingerprint.json",
-            json.dumps(fingerprint, indent=2, sort_keys=True),
-        )
+        archive.writestr("database.fingerprint.json", _fingerprint_member_bytes(fingerprint))
         _write_uploads(archive)
     dump_path.unlink(missing_ok=True)
     return backup_path
@@ -218,10 +229,7 @@ def create_mysql_backup(include_uploads=True):
         backup_path = BACKUP_DIR / f"ablehome-mysql-{timestamp}.zip"
         with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.write(dump_path, arcname="database.sql")
-            archive.writestr(
-                "database.fingerprint.json",
-                json.dumps(fingerprint, indent=2, sort_keys=True),
-            )
+            archive.writestr("database.fingerprint.json", _fingerprint_member_bytes(fingerprint))
             _write_uploads(archive)
         return backup_path
 
@@ -320,9 +328,10 @@ def _quote_ident(engine, name):
 def _cell_bytes(value):
     """A stable, unambiguous byte encoding of one column value.
 
-    ``None`` is distinguished from the empty string, and floats are encoded
-    with full precision so the fingerprint does not depend on locale or the
-    driver's default formatting.
+    Each value is tagged with a type byte so distinct types never collide, and
+    ``None`` is distinguished from the empty string. Numeric and temporal values
+    are rendered in their canonical, full-precision, locale-independent form so
+    the fingerprint does not depend on the driver's default formatting.
     """
     if value is None:
         return b"\x00NULL"
@@ -330,7 +339,9 @@ def _cell_bytes(value):
         return b"\x01b" + value
     if isinstance(value, bool):
         return b"\x01bool" + (b"1" if value else b"0")
-    if isinstance(value, (int,)):
+    if isinstance(value, Decimal):
+        return b"\x01dec" + str(value.normalize()).encode("utf-8")
+    if isinstance(value, int):
         return b"\x01i" + str(value).encode("utf-8")
     if isinstance(value, float):
         return b"\x01f" + repr(value).encode("utf-8")
@@ -340,6 +351,8 @@ def _cell_bytes(value):
         return b"\x01d" + value.isoformat().encode("utf-8")
     if isinstance(value, time):
         return b"\x01t" + value.isoformat().encode("utf-8")
+    if isinstance(value, memoryview):
+        return b"\x01b" + bytes(value)
     return b"\x01s" + str(value).encode("utf-8")
 
 
@@ -347,14 +360,35 @@ def _table_digest(conn, engine, table):
     """A content fingerprint of one table: row count, column names, and values.
 
     Row counts alone cannot detect a restore that produced the right number of
-    rows with wrong values, so the digest folds in every value, in a
-    deterministic order. Returns ``{"rows": int, "sha256": str}``.
+    rows with wrong values, so the digest folds in every value. Values are
+    serialized with ``_cell_bytes`` (type-tagged, full precision) and the rows
+    are read in a deterministic order, so two databases with identical contents
+    fingerprint identically regardless of physical row order or driver.
+
+    Rows are ordered by their primary key when the table has one, otherwise by
+    every column, which keeps the ordering stable across a dump/restore. Column
+    names are folded in after the rows so a reordered schema changes the digest.
+
+    Returns ``{"rows": int, "sha256": str}``.
     """
     quoted = _quote_ident(engine, table)
     columns = [column["name"] for column in engine.dialect.get_columns(conn, table)]
+    quoted_columns = ", ".join(_quote_ident(engine, name) for name in columns)
+
+    order_by = ""
+    try:
+        primary_key = engine.dialect.get_pk_constraint(conn, table).get("constrained_columns") or []
+    except Exception:
+        primary_key = []
+    order_columns = primary_key or columns
+    if order_columns:
+        order_by = " ORDER BY " + ", ".join(
+            _quote_ident(engine, name) for name in order_columns
+        )
+
     digest = hashlib.sha256()
     rows = 0
-    result = conn.exec_driver_sql(f"SELECT * FROM {quoted}")
+    result = conn.exec_driver_sql(f"SELECT {quoted_columns} FROM {quoted}{order_by}")
     for row in result:
         rows += 1
         for value in row:
@@ -386,22 +420,137 @@ def _database_fingerprint(url):
             engine.dispose()
 
 
+class FingerprintIntegrityError(RuntimeError):
+    """The recorded fingerprint failed authentication (tampered or unsigned)."""
+
+
+def _fingerprint_key():
+    """Return the HMAC key that authenticates fingerprints, or ``None``.
+
+    A dedicated ``BACKUP_FINGERPRINT_KEY`` wins; otherwise the app ``SECRET_KEY``
+    is used, domain-separated so the session-signing key is not reused verbatim.
+    A fingerprint stored beside a backup only detects corruption if the
+    fingerprint itself can be trusted, so it is authenticated with this key.
+    """
+    dedicated = os.environ.get("BACKUP_FINGERPRINT_KEY", "").strip()
+    if dedicated:
+        return dedicated.encode("utf-8")
+    secret = os.environ.get("SECRET_KEY", "").strip()
+    if secret:
+        return hashlib.sha256(b"ables-backup-fingerprint-v1:" + secret.encode("utf-8")).digest()
+    return None
+
+
+def _serialize_fingerprint(fingerprint):
+    """Canonical JSON for a fingerprint, so the MAC is reproducible."""
+    return json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
+
+
+def _fingerprint_payload(fingerprint):
+    """Wrap a fingerprint with a version and, when possible, an HMAC-SHA256 MAC.
+
+    The envelope is what gets stored (sidecar or ZIP member). ``mac`` is absent
+    only when no key is configured (local/dev), in which case the fingerprint is
+    unauthenticated and the reader refuses it whenever a key is configured.
+    """
+    payload = {"version": 2, "algorithm": "hmac-sha256", "fingerprint": fingerprint}
+    key = _fingerprint_key()
+    if key is not None:
+        payload["mac"] = hmac.new(
+            key, _serialize_fingerprint(fingerprint).encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+    return payload
+
+
+def _parse_fingerprint_payload(data, key):
+    """Validate a stored fingerprint payload and return the fingerprint dict.
+
+    Raises :class:`FingerprintIntegrityError` when the payload cannot be
+    authenticated: a bad MAC, an unsigned payload while a key is configured
+    (which would let an attacker strip the MAC to downgrade verification), or an
+    unrecognized structure. A bare fingerprint dict is accepted only when no key
+    is configured at all.
+    """
+    if not isinstance(data, dict):
+        raise FingerprintIntegrityError("recorded fingerprint is not a JSON object")
+
+    if "fingerprint" not in data and "mac" not in data and "version" not in data:
+        # Legacy bare format (pre-authentication). Accept it only when there is
+        # no key to check it against, so enabling a key cannot be bypassed by
+        # writing the old shape.
+        if key is not None:
+            raise FingerprintIntegrityError(
+                "recorded fingerprint is unsigned but a signing key is configured"
+            )
+        return data
+
+    fingerprint = data.get("fingerprint")
+    if not isinstance(fingerprint, dict):
+        raise FingerprintIntegrityError("recorded fingerprint envelope has no fingerprint")
+
+    if key is None:
+        return fingerprint
+
+    recorded_mac = data.get("mac")
+    if not isinstance(recorded_mac, str):
+        raise FingerprintIntegrityError("recorded fingerprint has no MAC")
+    expected = hmac.new(
+        key, _serialize_fingerprint(fingerprint).encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, recorded_mac):
+        raise FingerprintIntegrityError(
+            "recorded fingerprint failed authentication; it may have been altered"
+        )
+    return fingerprint
+
+
 def _write_fingerprint(dump_path, fingerprint):
-    """Write the content fingerprint beside the dump as a small JSON sidecar."""
+    """Write the authenticated fingerprint beside the dump as a JSON sidecar."""
     path = Path(str(dump_path) + ".fingerprint.json")
-    path.write_text(json.dumps(fingerprint, indent=2, sort_keys=True), encoding="utf-8")
+    path.write_text(
+        json.dumps(_fingerprint_payload(fingerprint), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     return path
 
 
+def _fingerprint_member_bytes(fingerprint):
+    """The authenticated fingerprint member to embed inside a ZIP backup."""
+    return json.dumps(_fingerprint_payload(fingerprint), indent=2, sort_keys=True).encode("utf-8")
+
+
+def _read_fingerprint_member(archive, name="database.fingerprint.json"):
+    """Read and authenticate the fingerprint member from an open ZIP archive.
+
+    Returns ``None`` when the member is absent. Raises
+    :class:`FingerprintIntegrityError` when it exists but is not authentic, so a
+    tampered member cannot downgrade a restore to the weaker checks.
+    """
+    if name not in archive.namelist():
+        return None
+    try:
+        data = json.loads(archive.read(name).decode("utf-8"))
+    except (ValueError, KeyError, OSError) as exc:
+        raise FingerprintIntegrityError(f"recorded fingerprint could not be read: {exc}") from exc
+    return _parse_fingerprint_payload(data, _fingerprint_key())
+
+
 def _read_fingerprint(dump_path):
-    """Read the fingerprint sidecar for a dump, if it was written."""
+    """Read and authenticate a dump's fingerprint sidecar.
+
+    Returns the fingerprint dict, or ``None`` when there is no sidecar. Raises
+    :class:`FingerprintIntegrityError` when a sidecar exists but cannot be
+    authenticated, so a tampered fingerprint fails the restore instead of
+    silently falling back to the weaker row-count check.
+    """
     path = Path(str(dump_path) + ".fingerprint.json")
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise FingerprintIntegrityError(f"recorded fingerprint could not be read: {exc}") from exc
+    return _parse_fingerprint_payload(data, _fingerprint_key())
 
 
 def _table_row_counts(url):
@@ -546,8 +695,23 @@ def _verify_restored_database(target_url, dump_path, objects):
     # made. It is a content hash, so it catches a restore that produced the
     # right number of rows with wrong values, and it stays authoritative even
     # when the source database no longer exists (a real disaster).
-    recorded = _read_fingerprint(dump_path)
-    if recorded:
+    try:
+        recorded = _read_fingerprint(dump_path)
+    except FingerprintIntegrityError as exc:
+        # A present-but-unauthentic fingerprint must fail the restore, not fall
+        # back to the weaker row-count check.
+        return False, f"recorded fingerprint could not be authenticated: {exc}"
+    if recorded is not None:
+        # Coverage: every table the dump carried data for must have a recorded
+        # entry. A fingerprint that silently omitted a table would otherwise
+        # leave that table's restore unverified while still reporting success.
+        missing_entries = sorted(objects["data_tables"] - set(recorded))
+        if missing_entries:
+            return False, (
+                "recorded fingerprint is incomplete; no entry for table(s): "
+                + ", ".join(missing_entries)
+            )
+
         restored_fingerprint = _database_fingerprint(target_url)
         if restored_fingerprint is None:
             return False, "could not fingerprint the restored database to verify it"
@@ -838,11 +1002,22 @@ def verify_backup(path):
                     ok, message = _verify_mysql_dump_member(archive)
                     if not ok:
                         return False, message
+                # Authenticate the fingerprint member if present: a tampered
+                # fingerprint would otherwise be trusted at restore time.
+                try:
+                    _read_fingerprint_member(archive)
+                except FingerprintIntegrityError as exc:
+                    return False, f"recorded fingerprint could not be authenticated: {exc}"
         except zipfile.BadZipFile:
             return False, "Backup archive could not be opened."
-    elif path.suffix == ".sql":
+    elif path.suffix in (".sql", ".dump"):
         if path.stat().st_size == 0:
-            return False, "MySQL dump file is empty."
+            return False, "Backup dump file is empty."
+        # A sidecar fingerprint must authenticate, or the backup cannot be trusted.
+        try:
+            _read_fingerprint(path)
+        except FingerprintIntegrityError as exc:
+            return False, f"recorded fingerprint could not be authenticated: {exc}"
     return True, "Backup verified as readable."
 
 
@@ -951,7 +1126,7 @@ def main(argv=None):
                 _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
                 print(restored)
             print("Restore drill complete. Schema objects and row counts were verified against the source,")
-            print("and the restored content was checked against the fingerprint recorded in the backup.")
+            print("and the restored content was checked against the authenticated fingerprint recorded in the backup.")
             print("Compare the alembic revision against production to finish.")
             return
     except RuntimeError as error:

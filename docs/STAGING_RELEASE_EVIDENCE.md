@@ -161,6 +161,28 @@ content, for both the PostgreSQL and MySQL paths:
    This catches same-count/different-values, and it is authoritative even when
    the source database no longer exists (a genuine disaster).
 
+The fingerprint is built to be trusted, not merely recorded:
+
+- **Canonical hashing.** Values are type-tagged and serialized deterministically
+  (`None` distinct from `''`, bytes distinct from text, `Decimal` normalized,
+  floats at full precision, dates/times in ISO form), and rows are read in an
+  explicit order (primary key when present, else every column) so identical
+  contents fingerprint identically regardless of physical row order or driver.
+- **Authenticated integrity.** The stored fingerprint is HMAC-SHA256 signed with
+  `BACKUP_FINGERPRINT_KEY` (falling back to a domain-separated derivation of
+  `SECRET_KEY`). A fingerprint that fails the MAC, or that is present but
+  unsigned while a key is configured (a downgrade attempt), fails the restore
+  rather than being trusted or silently falling back to the weaker check.
+- **Complete coverage.** Every table the dump carried data for must have a
+  recorded entry; a fingerprint that omits one fails the restore instead of
+  leaving that table silently unverified.
+
+Because the key authenticates the fingerprint, it must stay stable: set
+`BACKUP_FINGERPRINT_KEY` explicitly and back it up. Rotating `SECRET_KEY`
+(without a dedicated key) or the fingerprint key makes backups fingerprinted
+under the old key unverifiable, which is the safe, fail-closed direction but
+requires the key to be preserved alongside the backups.
+
 When a backup predates fingerprinting (no sidecar), verification falls back to
 comparing row counts against the live source; and when the source is gone, to
 requiring that every table the dump carried data for is at least non-empty. That
@@ -181,9 +203,18 @@ The checks were proven able to fail, not merely pass:
 - two tables with the same row count but different values produce different
   fingerprints, and a restore whose content differs from the backup raises
   `content mismatch (row values differ)` (the fingerprint path);
+- editing a recorded fingerprint breaks its HMAC, and the restore is refused
+  with `recorded fingerprint could not be authenticated` rather than trusting
+  the forgery or falling back to the weaker check;
+- stripping the MAC (writing a legacy unsigned fingerprint while a key is
+  configured) is likewise refused, so the signature cannot be downgraded away;
+- a fingerprint that omits a table the dump carried data for fails with
+  `recorded fingerprint is incomplete`, so no table goes silently unverified;
+- two databases with the same rows inserted in a different physical order
+  fingerprint identically, so a reordered dump is not rejected by mistake;
 - in a simulated disaster, the source database was dropped entirely and a
   restore from the stored archive still verified against the backup's
-  fingerprint and succeeded.
+  authenticated fingerprint and succeeded.
 
 The PostgreSQL drill, the MySQL drill, and the version-skew case all pass, and
 the full suite is green with both live drills enabled.
