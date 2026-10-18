@@ -326,14 +326,23 @@ survives losing that host, and verify the copy before you rely on it.
 6. Confirm off-site protection on `/admin/launch-checklist`, which reports ready
    only after a verified upload — a configured destination alone is not enough.
 
-To restore from off-site, fetch the artifact (with its fingerprint) from the
-destination and run the normal restore drill; the recorded fingerprint still
-authenticates the content:
+To restore from off-site, list the destination and restore a named set using
+only the off-site copy. The recorded fingerprint still authenticates the
+content, and the restore refuses the live `DATABASE_URL`:
 
 ```bash
-python -c "import offsite_backup; print(offsite_backup.download_backup('ables-postgres-YYYYMMDD-HHMMSS.dump'))"
-python backup_db.py --restore-to "$SCRATCH_DATABASE_URL"
+python backup_db.py --offsite-list
+python backup_db.py --restore-from-offsite ablehome-postgres-YYYYMMDD-HHMMSS.dump \
+    --restore-to "$SCRATCH_DATABASE_URL"
 ```
+
+`--offsite-list` is read-only and proves the destination is reachable with the
+configured credentials. `--restore-from-offsite` downloads that set, checks its
+fingerprint, and restores it into an isolated scratch database, so a full
+recovery can be demonstrated without the local backup file. (To fetch a copy by
+hand instead, `python -c "import offsite_backup;
+print(offsite_backup.download_backup('NAME'))"` followed by the normal
+`--restore-to` drill still works.)
 
 ### Preserving the fingerprint signing key
 

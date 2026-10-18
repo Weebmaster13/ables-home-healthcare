@@ -139,7 +139,12 @@ security fix in `tests/test_core_features.py`.
   an `sftp://` URL is refused, error messages are redacted, transfers stage under
   `.partial` and are renamed only after the size matches, and remote retention
   never removes the newest set. `offsite_backup.py` holds the transport; see
-  `README.md` "Off-site backup and recovery" for the owner setup steps.
+  `README.md` "Off-site backup and recovery" for the owner setup steps. Two
+  read-only/restore helpers drive the real destination without a hand-written
+  script: `backup_db.py --offsite-list` lists the complete sets (proving
+  reachability and credentials) and `backup_db.py --restore-from-offsite NAME
+  --restore-to <scratch URL>` restores a set using only the off-site copy,
+  authenticating its fingerprint first and refusing the live `DATABASE_URL`.
 - Admin routes are guarded in the body (`require_role("admin")` /
   `require_permission(...)`) after `@login_required`, not by a decorator.
   `tests/test_admin_authorization_sweep.py` enumerates every `/admin/` route

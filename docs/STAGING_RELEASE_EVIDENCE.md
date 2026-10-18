@@ -268,6 +268,13 @@ production path was exercised end to end with a real MySQL database:
   the default.
 - A backup signed with one key failed to authenticate under another, confirming
   the fail-closed direction.
+- The same run was driven through the supported CLI rather than a hand-written
+  script: `backup_db.py --offsite-list` listed the destination's complete sets
+  read-only, and `backup_db.py --restore-from-offsite <name> --restore-to
+  <scratch URL>` downloaded that set, authenticated its fingerprint, and restored
+  it using only the off-site copy. Pointing the restore at the live
+  `DATABASE_URL` was refused, and a bundle whose embedded fingerprint was
+  tampered failed closed before any database write.
 
 The unit tests (`tests/test_offsite_backup.py`) drive a protocol-faithful fake
 SFTP runner and a `FileDestination`, so they need no server; a single live test
@@ -321,6 +328,17 @@ env -u DATABASE_URL -u UPLOAD_FOLDER -u SECRET_KEY \
 # Off-site backup: create a backup and copy it off-site, verifying the remote
 # copy (exits non-zero unless the remote content is verified).
 python backup_db.py --offsite
+
+# Off-site destination check: list the complete recovery sets already on the
+# destination, read-only (proves reachability and that the credentials work
+# without creating a new backup).
+python backup_db.py --offsite-list
+
+# Off-site recovery drill: restore a named set from the off-site copy alone into
+# an isolated scratch database. Authenticates the fingerprint and refuses the
+# live DATABASE_URL, so the remote copy is proven able to rebuild the database.
+python backup_db.py --restore-from-offsite ablehome-mysql-YYYYMMDD-HHMMSS.zip \
+    --restore-to "mysql+pymysql://USER:PASS@HOST:PORT/ables_scratch"
 
 # Off-site transfer tests (unit; no server needed). Add OFFSITE_SFTP_TEST_URL,
 # OFFSITE_BACKUP_KEY, and OFFSITE_SFTP_KNOWN_HOSTS to run the live SFTP test.

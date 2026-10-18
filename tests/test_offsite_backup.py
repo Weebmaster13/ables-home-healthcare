@@ -629,3 +629,92 @@ def test_cli_offsite_failure_exits_nonzero(tmp_path, keyed, monkeypatch, capsys)
         backup_db.main(["--offsite"])
     assert exc.value.code == 1
     assert "ERROR" in capsys.readouterr().out
+
+
+def test_cli_offsite_list_shows_complete_sets(tmp_path, keyed, monkeypatch, capsys):
+    remote = tmp_path / "remote"
+    monkeypatch.setenv("OFFSITE_BACKUP_URL", str(remote))
+    dump = _make_dump(tmp_path)
+    offsite_backup.upload_backup(dump, destination=FileDestination(remote))
+
+    backup_db.main(["--offsite-list"])
+
+    output = capsys.readouterr().out
+    assert "complete recovery set(s)" in output
+    assert dump.name in output
+
+
+def test_cli_offsite_list_empty_destination_exits_nonzero(tmp_path, keyed, monkeypatch, capsys):
+    monkeypatch.setenv("OFFSITE_BACKUP_URL", str(tmp_path / "remote"))
+
+    with pytest.raises(SystemExit) as exc:
+        backup_db.main(["--offsite-list"])
+    assert exc.value.code == 1
+    assert "No complete recovery sets" in capsys.readouterr().out
+
+
+def test_cli_restore_from_offsite_needs_a_target(tmp_path, keyed, monkeypatch, capsys):
+    monkeypatch.setenv("OFFSITE_BACKUP_URL", str(tmp_path / "remote"))
+
+    with pytest.raises(SystemExit) as exc:
+        backup_db.main(["--restore-from-offsite", "some-backup.zip"])
+    assert exc.value.code == 1
+    assert "--restore-to" in capsys.readouterr().out
+
+
+def test_cli_restore_from_offsite_restores_the_remote_copy(tmp_path, keyed, monkeypatch, capsys):
+    remote = tmp_path / "remote"
+    monkeypatch.setenv("OFFSITE_BACKUP_URL", str(remote))
+    dump = _make_dump(tmp_path)
+    offsite_backup.upload_backup(dump, destination=FileDestination(remote))
+
+    calls = {}
+
+    def fake_restore(backup_path, target_url, allow_live=False):
+        calls["path"] = backup_path
+        calls["target"] = target_url
+        calls["allow_live"] = allow_live
+        return True, "Restored into scratch database."
+
+    monkeypatch.setattr(backup_db, "_restore_backup_into", fake_restore)
+
+    backup_db.main([
+        "--restore-from-offsite", dump.name,
+        "--restore-to", "mysql+pymysql://u:p@127.0.0.1:3306/ables_scratch",
+    ])
+
+    output = capsys.readouterr().out
+    assert "Restored into scratch database." in output
+    assert "from the off-site copy alone" in output
+    # The restored artifact must be the downloaded copy, not the original.
+    assert calls["path"] != dump
+    assert calls["path"].read_bytes() == dump.read_bytes()
+
+
+def test_cli_restore_from_offsite_refuses_a_tampered_copy(tmp_path, keyed, monkeypatch, capsys):
+    remote = tmp_path / "remote"
+    monkeypatch.setenv("OFFSITE_BACKUP_URL", str(remote))
+    dump = _make_dump(tmp_path)
+    offsite_backup.upload_backup(dump, destination=FileDestination(remote))
+
+    # Corrupt the fingerprint on the destination: the restore must refuse it
+    # before it ever reaches a database.
+    sidecar = remote / (dump.name + offsite_backup.FINGERPRINT_SUFFIX)
+    sidecar.write_text('{"tables": {}}', encoding="utf-8")
+
+    restored = {"called": False}
+
+    def fake_restore(*args, **kwargs):
+        restored["called"] = True
+        return True, "should not run"
+
+    monkeypatch.setattr(backup_db, "_restore_backup_into", fake_restore)
+
+    with pytest.raises(SystemExit) as exc:
+        backup_db.main([
+            "--restore-from-offsite", dump.name,
+            "--restore-to", "mysql+pymysql://u:p@127.0.0.1:3306/ables_scratch",
+        ])
+    assert exc.value.code == 1
+    assert "ERROR" in capsys.readouterr().out
+    assert restored["called"] is False

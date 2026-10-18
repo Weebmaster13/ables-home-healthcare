@@ -458,11 +458,24 @@ def fingerprint_key_id():
 def verify_fingerprint_key_matches(backup_path):
     """True when the recorded fingerprint authenticates under the current key.
 
+    Handles both a raw dump with a ``.fingerprint.json`` sidecar and a ZIP
+    bundle with the fingerprint embedded as ``database.fingerprint.json``.
     Raises :class:`FingerprintIntegrityError` with a clear message when the key
     is wrong, so an operator restoring a backup learns immediately that they are
     holding the wrong signing key rather than a corrupted backup.
     """
-    _read_fingerprint(Path(backup_path))
+    backup_path = Path(backup_path)
+    if backup_path.suffix == ".zip":
+        with zipfile.ZipFile(backup_path) as archive:
+            if _read_fingerprint_member(archive) is None:
+                raise FingerprintIntegrityError(
+                    f"{backup_path.name} has no embedded fingerprint to authenticate"
+                )
+        return True
+    if _read_fingerprint(backup_path) is None:
+        raise FingerprintIntegrityError(
+            f"{backup_path.name} has no fingerprint sidecar to authenticate"
+        )
     return True
 
 
@@ -1090,6 +1103,40 @@ def _verify_pg_dump_member(archive):
     return True, "Backup verified: archive readable and pg_dump table of contents lists successfully."
 
 
+def _restore_backup_into(backup_path, target_url, allow_live=False):
+    """Restore a backup artifact (ZIP bundle or raw dump) into ``target_url``.
+
+    Shared by ``--restore-to`` (restore the backup just created) and
+    ``--restore-from-offsite`` (restore a copy pulled from the off-site
+    destination), so both drills verify against the same authenticated
+    fingerprint and the same refusal to touch the live database.
+    """
+    backup_path = Path(backup_path)
+    if str(backup_path).endswith(".zip"):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with zipfile.ZipFile(backup_path) as archive:
+                members = archive.namelist()
+                if "database.sql" in members:
+                    member, restore = "database.sql", restore_mysql_dump
+                elif "database.dump" in members:
+                    member, restore = "database.dump", restore_postgres_dump
+                else:
+                    raise RuntimeError("Backup archive has no database dump member; cannot restore.")
+                archive.extract(member, tmpdir)
+                # Carry the recorded fingerprint next to the dump so the restore
+                # is verified against the backup's content, not just its row
+                # counts. It must land under the name _read_fingerprint expects
+                # (<dump>.fingerprint.json).
+                if "database.fingerprint.json" in members:
+                    Path(str(Path(tmpdir) / member) + ".fingerprint.json").write_bytes(
+                        archive.read("database.fingerprint.json")
+                    )
+            return restore(Path(tmpdir) / member, target_url, allow_live=allow_live)
+    if backup_path.suffix == ".dump" or _is_postgres(_database_url()):
+        return restore_postgres_dump(backup_path, target_url, allow_live=allow_live)
+    return restore_mysql_dump(backup_path, target_url, allow_live=allow_live)
+
+
 def main(argv=None):
     import argparse
 
@@ -1122,6 +1169,22 @@ def main(argv=None):
              "compares SHA-256; 'size' compares sizes only and is weaker.",
     )
     parser.add_argument(
+        "--offsite-list",
+        action="store_true",
+        help="List the complete recovery sets on the off-site destination and "
+             "exit, without creating a new backup. Read-only; proves the "
+             "destination is reachable and the credentials work.",
+    )
+    parser.add_argument(
+        "--restore-from-offsite",
+        metavar="NAME",
+        help="Download the named recovery set from the off-site destination, "
+             "authenticate its fingerprint, and restore it into --restore-to "
+             "(an isolated scratch database). Proves the off-site copy alone "
+             "can rebuild the database. Refuses to target the live DATABASE_URL "
+             "unless --allow-live is also given.",
+    )
+    parser.add_argument(
         "--print-key-id",
         action="store_true",
         help="Print the non-secret ID of the fingerprint signing key and exit. "
@@ -1137,6 +1200,44 @@ def main(argv=None):
             print("No fingerprint signing key configured (set BACKUP_FINGERPRINT_KEY).")
             raise SystemExit(1)
         print(f"Fingerprint key ID: {key_id}")
+        return
+
+    if args.offsite_list:
+        import offsite_backup
+
+        try:
+            names = offsite_backup.list_remote_backups()
+        except RuntimeError as error:
+            print(f"ERROR: {error}")
+            raise SystemExit(1)
+        described = offsite_backup.describe_destination()
+        if not names:
+            print(f"No complete recovery sets on {described.get('location') or 'the destination'}.")
+            raise SystemExit(1)
+        print(f"{len(names)} complete recovery set(s) on {described.get('location') or 'the destination'}:")
+        for name in names:
+            print(f"  {name}")
+        return
+
+    if args.restore_from_offsite and not args.restore_to:
+        print("ERROR: --restore-from-offsite needs --restore-to <scratch database URL>.")
+        raise SystemExit(1)
+
+    if args.restore_from_offsite:
+        import offsite_backup
+
+        try:
+            downloaded = offsite_backup.download_backup(args.restore_from_offsite)
+            # Authenticate before touching a database: a copy that cannot be
+            # trusted must not be restored, even into a scratch database.
+            verify_fingerprint_key_matches(downloaded)
+            _, restored = _restore_backup_into(downloaded, args.restore_to, allow_live=args.allow_live)
+        except (RuntimeError, offsite_backup.OffsiteError) as error:
+            print(f"ERROR: {error}")
+            raise SystemExit(1)
+        print(restored)
+        print(f"Restored {args.restore_from_offsite} from the off-site copy alone; its")
+        print("fingerprint authenticated and the restored content was checked against it.")
         return
 
     try:
@@ -1158,38 +1259,8 @@ def main(argv=None):
                   f"{receipt['destination']['location']} ({receipt['verification']['message']})")
 
         if args.restore_to:
-            dump_path = backup_path
-            if str(backup_path).endswith(".zip"):
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    with zipfile.ZipFile(backup_path) as archive:
-                        members = archive.namelist()
-                        if "database.sql" in members:
-                            member = "database.sql"
-                            restore = restore_mysql_dump
-                        elif "database.dump" in members:
-                            member = "database.dump"
-                            restore = restore_postgres_dump
-                        else:
-                            print("Backup archive has no database dump member; cannot restore.")
-                            raise SystemExit(1)
-                        archive.extract(member, tmpdir)
-                        # Carry the recorded fingerprint next to the dump so
-                        # the restore is verified against the backup's content,
-                        # not just its row counts. It must land under the name
-                        # _read_fingerprint expects (<dump>.fingerprint.json).
-                        if "database.fingerprint.json" in members:
-                            Path(str(Path(tmpdir) / member) + ".fingerprint.json").write_bytes(
-                                archive.read("database.fingerprint.json")
-                            )
-                    dump_path = Path(tmpdir) / member
-                    _, restored = restore(dump_path, args.restore_to, allow_live=args.allow_live)
-                    print(restored)
-            elif backup_path.suffix == ".dump" or _is_postgres(_database_url()):
-                _, restored = restore_postgres_dump(dump_path, args.restore_to, allow_live=args.allow_live)
-                print(restored)
-            else:
-                _, restored = restore_mysql_dump(dump_path, args.restore_to, allow_live=args.allow_live)
-                print(restored)
+            _, restored = _restore_backup_into(backup_path, args.restore_to, allow_live=args.allow_live)
+            print(restored)
             print("Restore drill complete. Schema objects and row counts were verified against the source,")
             print("and the restored content was checked against the authenticated fingerprint recorded in the backup.")
             print("Compare the alembic revision against production to finish.")
