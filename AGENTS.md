@@ -118,6 +118,9 @@ security fix in `tests/test_core_features.py`.
   or incomplete fingerprint fails the restore rather than falling back to the
   weaker check. Keep `BACKUP_FINGERPRINT_KEY` stable and backed up — rotating it
   (or `SECRET_KEY` with no dedicated key) makes older backups unverifiable.
+  `python backup_db.py --print-key-id` prints a short, non-secret ID of the
+  signing key so an operator can confirm after a restore that they still hold
+  the right key (the key itself is never printed).
   Without a fingerprint the
   check falls back to comparing row counts against the live source, and when the
   source is gone, to requiring that tables the dump carried data for are
@@ -126,6 +129,17 @@ security fix in `tests/test_core_features.py`.
   version-skew GUC; the ignored-errors summary alone is never treated as
   success. Live drills: `POSTGRES_TEST_URL=...` and `MYSQL_TEST_URL=...` (the
   MySQL one needs `mysqldump`/`mysql` on PATH).
+- Off-site backup is built in: `python backup_db.py --offsite` copies the
+  artifact, its authenticated fingerprint, and a non-secret manifest to
+  `OFFSITE_BACKUP_URL` and verifies the remote copy (SHA-256 by default), exiting
+  non-zero unless verification passes. `sftp://` (OpenSSH, key-based,
+  host-key-pinned via `OFFSITE_BACKUP_KEY`/`OFFSITE_SFTP_KNOWN_HOSTS`) counts as
+  off-site; a `file://` path or directory does not, and `/admin/launch-checklist`
+  reports off-site protection ready only after a verified upload. A password in
+  an `sftp://` URL is refused, error messages are redacted, transfers stage under
+  `.partial` and are renamed only after the size matches, and remote retention
+  never removes the newest set. `offsite_backup.py` holds the transport; see
+  `README.md` "Off-site backup and recovery" for the owner setup steps.
 - Admin routes are guarded in the body (`require_role("admin")` /
   `require_permission(...)`) after `@login_required`, not by a decorator.
   `tests/test_admin_authorization_sweep.py` enumerates every `/admin/` route

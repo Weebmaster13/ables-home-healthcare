@@ -291,6 +291,71 @@ Production should schedule encrypted backups at least daily and keep off-server 
 For regulated or sensitive data, encrypt backups using the hosting provider's
 managed backup encryption or a vetted encryption tool before storing off-server.
 
+### Off-site backup and recovery
+
+A local backup in `backups/` protects against a corrupted table, not against
+losing the production host. Copy each finished backup to a destination that
+survives losing that host, and verify the copy before you rely on it.
+
+1. Choose a destination. An `sftp://` host is off-site (a second host, a NAS, or
+   a storage account that accepts SFTP). A directory on the same hosting account
+   is *not* off-site — it is lost with the host — so the readiness check treats
+   it as not ready.
+2. Create a dedicated SSH key pair for backups. Put the private key where only
+   the backup job can read it, and set `OFFSITE_BACKUP_KEY` to its path. Add the
+   public key to the destination's `authorized_keys`. Passwords in an `sftp://`
+   URL are refused rather than used, so a credential never appears in a command
+   line or a log.
+3. Pin the destination's host key in a known-hosts file and set
+   `OFFSITE_SFTP_KNOWN_HOSTS` to it, so the transfer is encrypted *and* the
+   destination is authenticated.
+4. Configure `OFFSITE_BACKUP_URL`, for example
+   `sftp://backups@backup-host/home/backups/ables`.
+5. Run the backup and the transfer together:
+
+   ```bash
+   python backup_db.py --offsite
+   ```
+
+   The command copies the database artifact, its authenticated fingerprint, and
+   a non-secret manifest, then downloads the remote copy and compares its
+   SHA-256 with the local file. It exits non-zero unless the remote copy is
+   verified, so a partial or corrupted transfer is never reported as a
+   successful backup. `--offsite-verify=size` is a weaker size-only check.
+
+6. Confirm off-site protection on `/admin/launch-checklist`, which reports ready
+   only after a verified upload — a configured destination alone is not enough.
+
+To restore from off-site, fetch the artifact (with its fingerprint) from the
+destination and run the normal restore drill; the recorded fingerprint still
+authenticates the content:
+
+```bash
+python -c "import offsite_backup; print(offsite_backup.download_backup('ables-postgres-YYYYMMDD-HHMMSS.dump'))"
+python backup_db.py --restore-to "$SCRATCH_DATABASE_URL"
+```
+
+### Preserving the fingerprint signing key
+
+Backup fingerprints are HMAC-signed with `BACKUP_FINGERPRINT_KEY` (falling back
+to a domain-separated derivation of `SECRET_KEY`). The key proves a fingerprint
+was not altered, so a backup can only be content-verified while that key is
+still available.
+
+- Set `BACKUP_FINGERPRINT_KEY` to a long random value and keep it stable.
+- Store it in a password manager or secret store, separate from the backups, and
+  record its non-secret ID so you can confirm you still hold the right key:
+
+  ```bash
+  python backup_db.py --print-key-id
+  ```
+
+  The command prints a short ID, never the key. The same ID after a restore
+  means the key matches and the fingerprints will authenticate.
+- Do not rotate `BACKUP_FINGERPRINT_KEY` (or `SECRET_KEY` with no dedicated key)
+  without re-fingerprinting backups; rotating it makes older backups
+  unverifiable. See `rotate_secret_key_notes.md`.
+
 ## Monitoring
 
 Basic local health check:

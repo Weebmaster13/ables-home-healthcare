@@ -40,6 +40,20 @@ def database_backup_tool_available(database_uri):
     return True
 
 
+def offsite_destination_is_off_site(spec):
+    """True only for a destination that survives losing the production host.
+
+    An ``sftp://`` URL is off-site. A bare path or ``file://`` URL is not, even
+    when set: a directory on the production host — including a second folder on
+    the same hosting account — is lost with that host, so it must not satisfy a
+    readiness check that claims off-site protection exists.
+    """
+    spec = str(spec or "").strip()
+    if not spec:
+        return False
+    return spec.lower().startswith("sftp://")
+
+
 CHECKS = [
     (
         "Production mode",
@@ -109,6 +123,14 @@ CHECKS = [
         "Set BACKUP_FINGERPRINT_KEY to a stable, backed-up value. It authenticates "
         "backup fingerprints; without it the key is derived from SECRET_KEY, so "
         "rotating SECRET_KEY would make older backups unverifiable.",
+    ),
+    (
+        "Off-site backup destination",
+        lambda c: offsite_destination_is_off_site(c.get("OFFSITE_BACKUP_URL", "")),
+        "Set OFFSITE_BACKUP_URL to a destination that survives losing the "
+        "production host (for example sftp://user@backup-host/path, with "
+        "OFFSITE_BACKUP_KEY and OFFSITE_SFTP_KNOWN_HOSTS). A directory on the "
+        "production host is not an off-site backup.",
     ),
     (
         "Durable upload storage",

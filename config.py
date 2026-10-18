@@ -127,6 +127,14 @@ class Config:
     # SECRET_KEY, so it should be set explicitly and kept stable in production;
     # rotating it makes backups fingerprinted under the old key unverifiable.
     BACKUP_FINGERPRINT_KEY = os.environ.get("BACKUP_FINGERPRINT_KEY", "")
+    # Off-site backup destination (survives loss of the production host).
+    # sftp:// counts as off-site; a bare directory does not.
+    OFFSITE_BACKUP_URL = os.environ.get("OFFSITE_BACKUP_URL", "")
+    OFFSITE_BACKUP_KEY = os.environ.get("OFFSITE_BACKUP_KEY", "")
+    OFFSITE_SFTP_KNOWN_HOSTS = os.environ.get("OFFSITE_SFTP_KNOWN_HOSTS", "")
+    # `or 10` guards an empty OFFSITE_RETENTION= in a copied env file, which
+    # would otherwise crash app import with a ValueError.
+    OFFSITE_RETENTION = int(os.environ.get("OFFSITE_RETENTION") or 10)
     # When production has no external antivirus scanner, reject uploads by
     # default (fail closed). Set UPLOAD_SCAN_FAIL_OPEN=true only to accept
     # unscanned uploads after the owner has approved that documented risk.

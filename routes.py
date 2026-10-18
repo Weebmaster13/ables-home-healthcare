@@ -17,6 +17,7 @@ from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
 from security import audit, commit_or_flash_failure, generate_recovery_codes, password_feedback, password_is_breached, password_is_strong, read_upload_head, reject_public_submission, require_permission, require_role, scan_upload_stream
 from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup, list_backups
+from offsite_backup import describe_destination, read_state
 
 # ---------------- MAIN BLUEPRINT ----------------
 main_bp = Blueprint("main", __name__)
@@ -2598,6 +2599,33 @@ def admin_system_status():
     )
 
 
+def offsite_backup_status():
+    """Whether a *verified* off-site backup exists, and a non-secret detail line.
+
+    Off-site protection is only "ready" when the destination is genuinely
+    off-site (an sftp:// destination, not a directory on this host) *and* the
+    last upload was verified. A configured destination with no verified upload
+    is reported as not ready, so a destination alone cannot be mistaken for a
+    recoverable backup.
+    """
+    described = describe_destination()
+    receipt = read_state()
+    verified_at = (receipt or {}).get("uploaded_utc", "")
+    if described.get("off_site") and verified_at:
+        return True, f"Last verified off-site backup: {verified_at} to {described.get('location', 'destination')}."
+    if described.get("off_site"):
+        return False, (
+            f"Off-site destination configured ({described.get('location', 'destination')}) "
+            "but no verified upload recorded yet. Run backup_db.py --offsite."
+        )
+    if described.get("kind") == "none":
+        return False, "No off-site destination configured. Set OFFSITE_BACKUP_URL (sftp://)."
+    return False, (
+        "Configured destination is not off-site (a directory on this host is lost "
+        "with the host). Set OFFSITE_BACKUP_URL to an sftp:// destination."
+    )
+
+
 @main_bp.route("/admin/launch-checklist")
 @login_required
 def admin_launch_checklist():
@@ -2606,6 +2634,7 @@ def admin_launch_checklist():
     health_checks = health_detail_checks()
     BACKUP_DIR.mkdir(exist_ok=True)
     backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
+    offsite_ready, offsite_detail = offsite_backup_status()
     test_inquiries = Inquiry.query.filter(
         or_(
             Inquiry.email.ilike("%test%"),
@@ -2643,6 +2672,12 @@ def admin_launch_checklist():
             "label": "Backups confirmed",
             "ready": len(backups) > 0,
             "detail": f"{len(backups)} local backup file(s). Copy them off-host and verify a restore.",
+            "href": url_for("main.admin_backups"),
+        },
+        {
+            "label": "Off-site backup verified",
+            "ready": bool(offsite_ready),
+            "detail": offsite_detail,
             "href": url_for("main.admin_backups"),
         },
         {

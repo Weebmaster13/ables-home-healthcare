@@ -220,7 +220,63 @@ The checks were proven able to fail, not merely pass:
 The PostgreSQL drill, the MySQL drill, and the version-skew case all pass, and
 the full suite is green with both live drills enabled.
 
-### 6. Admin route authorization
+### 6. Off-site backup and recovery
+
+A backup in the local `backups/` directory protects against a corrupted table,
+not against losing the production server. `offsite_backup.py` copies a finished
+backup to a destination that survives that loss and refuses to report success
+until the remote copy is verified.
+
+- **Recovery set travels together.** The database artifact, its HMAC-signed
+  fingerprint, and a non-secret `*.manifest.json` are published as one unit. A
+  raw `.dump`/`.sql` is refused if its fingerprint sidecar is missing, and a ZIP
+  bundle is refused if its embedded fingerprint member is missing, so a backup
+  that cannot be content-verified after a disaster is never published.
+- **Verified, not assumed.** After upload the remote artifact is downloaded and
+  its SHA-256 compared with the local file. The manifest is written last and
+  removed again if verification fails, so a partial or corrupted transfer is
+  never mistaken for a recovery point. `--offsite-verify=size` is an explicitly
+  weaker size-only mode.
+- **Atomic staging.** Transfers land under a `.partial` name and are renamed
+  only after the remote size matches, so an interrupted upload cannot be picked
+  up as a valid set.
+- **Encrypted and authenticated transport.** `sftp://` uses OpenSSH with key
+  authentication (`OFFSITE_BACKUP_KEY`) and a pinned host key
+  (`OFFSITE_SFTP_KNOWN_HOSTS`). A password in an `sftp://` URL is refused rather
+  than used, so a credential never reaches a command line or a log; error
+  messages are redacted before they surface.
+- **Off-site means off-site.** A `file://` path or a bare directory is accepted
+  for a mounted remote volume or a deterministic test, but never counts as
+  off-site for readiness — a directory on the production host is lost with it.
+- **Retention never removes the newest.** `cleanup_remote_backups` keeps the
+  most recent `keep` complete sets (floor of 1) and removes a set's fingerprint
+  and manifest with the artifact, so the last known-good copy cannot be deleted
+  to make room for a new one.
+
+**Genuine drills run in this repository (no external service, no purchase).**
+A throwaway OpenSSH `sshd` and a throwaway MariaDB were started locally, and the
+production path was exercised end to end with a real MySQL database:
+
+- `backup_db.py --offsite` created a real `mysqldump` bundle and copied it over
+  real SFTP; the remote SHA-256 matched the local file.
+- The local backup was then deleted and the recovery path used only the off-site
+  copy: it was downloaded, its fingerprint authenticated, restored into a
+  scratch MariaDB, and the restored rows matched (3 patient rows, content
+  fingerprints verified).
+- Corrupting the remote artifact (same size, different bytes) failed the hash
+  verification while the size-only mode passed — demonstrating why the hash is
+  the default.
+- A backup signed with one key failed to authenticate under another, confirming
+  the fail-closed direction.
+
+The unit tests (`tests/test_offsite_backup.py`) drive a protocol-faithful fake
+SFTP runner and a `FileDestination`, so they need no server; a single live test
+runs only when `OFFSITE_SFTP_TEST_URL` is set. Five safeguards were
+mutation-checked (skipping verification, not requiring the manifest, disabling
+redaction, removing the retention floor, and not requiring the sidecar), and
+each removal made a test fail.
+
+### 7. Admin route authorization
 
 A manual spot check of a few admin pages does not establish that the rest are
 guarded. `tests/test_admin_authorization_sweep.py` enumerates every route under
@@ -261,6 +317,17 @@ python tools/staging_verify.py --insecure \
 # Production configuration gate
 env -u DATABASE_URL -u UPLOAD_FOLDER -u SECRET_KEY \
     ENV_FILE=/tmp/ables-staging.env python production_check.py
+
+# Off-site backup: create a backup and copy it off-site, verifying the remote
+# copy (exits non-zero unless the remote content is verified).
+python backup_db.py --offsite
+
+# Off-site transfer tests (unit; no server needed). Add OFFSITE_SFTP_TEST_URL,
+# OFFSITE_BACKUP_KEY, and OFFSITE_SFTP_KNOWN_HOSTS to run the live SFTP test.
+python -m pytest tests/test_offsite_backup.py -q
+
+# Non-secret ID of the fingerprint signing key (record it with the key).
+python backup_db.py --print-key-id
 ```
 
 The harness covers: minimal `/healthz`; CSRF token issuance; public form
@@ -308,13 +375,18 @@ The changes are additive and backend-aware; none alters stored data.
    review of business details, service/licensing scope, privacy, and photos.
 3. Production must use durable, private storage. cPanel home-disk paths persist;
    `/tmp` does not. Confirm the chosen path and its permissions.
-4. Off-site backup copies are not automated here. Taking a dump is not the same
-   as storing a recoverable copy elsewhere; upload verified dumps off-site. The
-   restore drill now verifies the restored *content* against a fingerprint
-   recorded in the backup (row count plus a per-table value hash), so a dump that
-   restores incompletely or with altered rows is caught, but that is a local
-   check only: the off-site copy and its restoration still need to be
-   demonstrated against the real target.
+4. Off-site backup copies are now automated and verified by
+   `backup_db.py --offsite` (see "Off-site backup and recovery"). What remains is
+   the owner's choice of destination: point `OFFSITE_BACKUP_URL` at a real
+   `sftp://` host that survives losing the production server, set
+   `OFFSITE_BACKUP_KEY` and `OFFSITE_SFTP_KNOWN_HOSTS`, and run one real
+   transfer. Until then `/admin/launch-checklist` reports off-site protection as
+   not ready. The transfer is exercised in this repository against a local
+   OpenSSH server (a genuine encrypted, host-key-pinned SFTP round trip,
+   including a restore that used only the off-site copy), but not against the
+   owner's chosen destination. The restored *content* is verified against a
+   fingerprint recorded in the backup (row count plus a per-table value hash), so
+   a dump that restores incompletely or with altered rows is caught.
 5. The admin authorization sweep covers every `/admin/` route for anonymous,
    non-admin, and admin access (see "Admin route authorization"). It does not
    cover finer-grained `require_permission` distinctions within the admin role,

@@ -441,6 +441,31 @@ def _fingerprint_key():
     return None
 
 
+def fingerprint_key_id():
+    """A short, non-secret identifier for the key that signs fingerprints.
+
+    Lets an operator confirm that the key they hold still matches the key a
+    backup was signed with — after a restore, or after moving the key to a
+    password manager — without ever printing the key. ``None`` when no key is
+    configured (fingerprints are then unauthenticated).
+    """
+    key = _fingerprint_key()
+    if key is None:
+        return None
+    return hashlib.sha256(b"ables-backup-key-id-v1:" + key).hexdigest()[:16]
+
+
+def verify_fingerprint_key_matches(backup_path):
+    """True when the recorded fingerprint authenticates under the current key.
+
+    Raises :class:`FingerprintIntegrityError` with a clear message when the key
+    is wrong, so an operator restoring a backup learns immediately that they are
+    holding the wrong signing key rather than a corrupted backup.
+    """
+    _read_fingerprint(Path(backup_path))
+    return True
+
+
 def _serialize_fingerprint(fingerprint):
     """Canonical JSON for a fingerprint, so the MAC is reproducible."""
     return json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
@@ -1082,7 +1107,37 @@ def main(argv=None):
         help="Permit --restore-to to target the live DATABASE_URL. Off by "
              "default so a drill cannot overwrite production by accident.",
     )
+    parser.add_argument(
+        "--offsite",
+        action="store_true",
+        help="Copy the backup to the destination in OFFSITE_BACKUP_URL and "
+             "verify the remote copy. Fails (non-zero exit) unless the transfer "
+             "completes and the remote content is verified.",
+    )
+    parser.add_argument(
+        "--offsite-verify",
+        choices=("hash", "size"),
+        default="hash",
+        help="How to verify the remote copy: 'hash' (default) downloads and "
+             "compares SHA-256; 'size' compares sizes only and is weaker.",
+    )
+    parser.add_argument(
+        "--print-key-id",
+        action="store_true",
+        help="Print the non-secret ID of the fingerprint signing key and exit. "
+             "Record this alongside the key in your password manager; after a "
+             "restore, the same ID confirms you still hold the right key. The "
+             "key itself is never printed.",
+    )
     args = parser.parse_args(argv)
+
+    if args.print_key_id:
+        key_id = fingerprint_key_id()
+        if key_id is None:
+            print("No fingerprint signing key configured (set BACKUP_FINGERPRINT_KEY).")
+            raise SystemExit(1)
+        print(f"Fingerprint key ID: {key_id}")
+        return
 
     try:
         backup_path = _dispatch_backup(_database_url(), include_uploads=True)
@@ -1091,6 +1146,16 @@ def main(argv=None):
         print(f"{'Backup created' if ok else 'Backup FAILED verification'}: {backup_path} ({message})")
         if not ok:
             raise SystemExit(1)
+
+        if args.offsite:
+            import offsite_backup
+
+            receipt = offsite_backup.upload_backup(
+                backup_path, verify=args.offsite_verify,
+                keep=int(os.environ.get("OFFSITE_RETENTION", "10") or 10),
+            )
+            print(f"Off-site backup verified: {receipt['artifact']} -> "
+                  f"{receipt['destination']['location']} ({receipt['verification']['message']})")
 
         if args.restore_to:
             dump_path = backup_path
@@ -1130,12 +1195,15 @@ def main(argv=None):
             print("Compare the alembic revision against production to finish.")
             return
     except RuntimeError as error:
-        # Refusals (live target, missing tool, failed dump) should read as a
-        # clear message, not a traceback.
+        # Refusals (live target, missing tool, failed dump, failed off-site
+        # transfer) should read as a clear message, not a traceback.
         print(f"ERROR: {error}")
         raise SystemExit(1)
 
-    print("Upload this file to durable, off-site storage to complete a real backup.")
+    if args.offsite:
+        print("Local backup complete and copied off-site (verified above).")
+    else:
+        print("Upload this file to durable, off-site storage to complete a real backup.")
 
 
 if __name__ == "__main__":
