@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from io import BytesIO
 import os
+from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -8,10 +9,11 @@ import uuid
 
 from werkzeug.security import generate_password_hash
 from werkzeug.datastructures import FileStorage
+import pytest
 
 from app import app
 from extensions import db
-from models import AdminRecoveryCode, Appointment, AuditLog, CaregiverApplication, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, User
+from models import AdminRecoveryCode, Appointment, AuditLog, CaregiverApplication, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from production_check import configured
 from routes import allowed_document, caregiver_double_bookings, save_private_upload, send_visit_reminder
 from backup_db import BACKUP_DIR, cleanup_old_backups
@@ -59,8 +61,13 @@ def test_healthz_reports_database_and_uploads():
         response = client.get("/healthz")
     assert response.status_code == 200
     data = response.get_json()
-    assert data["checks"]["database"] == "ok"
-    assert data["checks"]["uploads"] == "ok"
+    # Public liveness endpoint must not disclose internal operational details.
+    assert data == {"status": "ok"}
+
+    with app.test_client() as client:
+        admin_response = client.get("/admin/healthz")
+    # Anonymous callers cannot reach the detailed diagnostics.
+    assert admin_response.status_code in (302, 401, 403)
 
 
 def test_registration_and_login_flow():
@@ -285,7 +292,7 @@ def test_upload_scanner_rejects_eicar_signature():
 
 def test_upload_mime_validation_accepts_documents_and_blocks_fake_extension():
     with app.app_context():
-        good = FileStorage(stream=BytesIO(b"%PDF safe"), filename="safe.pdf")
+        good = FileStorage(stream=BytesIO(b"%PDF-1.4 safe contents"), filename="safe.pdf")
         stored, original = save_private_upload(good, "test-documents", "test", allowed_document)
         assert stored.endswith(".pdf")
         assert original == "safe.pdf"
@@ -322,7 +329,7 @@ def test_client_can_request_appointment_and_manage_document():
                 "title": "Test Document",
                 "category": "Intake",
                 "document_consent": "yes",
-                "document": (BytesIO(b"safe file"), "test-document.pdf"),
+                "document": (BytesIO(b"%PDF-1.4 test document"), "test-document.pdf"),
             },
             content_type="multipart/form-data",
             follow_redirects=False,
@@ -416,6 +423,26 @@ def test_admin_recovery_code_login_can_be_disabled():
 
     with app.app_context():
         assert AdminRecoveryCode.query.filter_by(admin_id=admin.id, used_at=None).count() > 0
+        User.query.filter_by(id=admin.id).delete()
+        db.session.commit()
+
+
+def test_system_status_shows_actual_database_backend():
+    """The admin system-status card must name the real backend, not PostgreSQL."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+        response = client.get("/admin/system-status")
+        assert response.status_code == 200
+        # Tests run on SQLite; the label must reflect that, not "PostgreSQL".
+        assert b"SQLite" in response.data
+        assert b"<span>PostgreSQL</span>" not in response.data
+
+    with app.app_context():
         User.query.filter_by(id=admin.id).delete()
         db.session.commit()
 
@@ -885,4 +912,928 @@ def test_portal_and_seo_checklist_pages_are_real_routes():
     with app.app_context():
         User.query.filter_by(id=admin.id).delete()
         db.session.commit()
+
+
+
+def test_full_file_scan_detects_signature_past_sample_boundary():
+    from security import scan_upload_stream
+
+    with app.app_context():
+        # EICAR signature deliberately placed after the old 4096-byte sample window.
+        payload = b"J" * 5000 + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE"
+        file_storage = FileStorage(stream=BytesIO(payload), filename="late-sig.pdf")
+        clean, message = scan_upload_stream(file_storage)
+    assert clean is False
+    assert "EICAR" in message or "Virus" in message
+
+
+def test_external_scanner_receives_complete_file(tmp_path):
+    from security import scan_upload_stream
+
+    # `tee` writes everything it reads on stdin to a file, so we can prove the
+    # scanner saw the whole upload rather than a leading sample.
+    captured = tmp_path / "seen.bin"
+    with app.app_context():
+        original = app.config.get("VIRUS_SCAN_COMMAND")
+        app.config["VIRUS_SCAN_COMMAND"] = f"tee {captured}"
+        try:
+            payload = b"X" * 9000
+            file_storage = FileStorage(stream=BytesIO(payload), filename="big.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config["VIRUS_SCAN_COMMAND"] = original
+    assert clean is True
+    # A scanner must see the whole file, not a truncated sample.
+    assert captured.read_bytes() == payload
+
+
+def test_external_scanner_receives_a_megabyte_upload_intact(tmp_path):
+    """The whole file must reach the scanner, however large. A size that is not
+    a power of two makes any silent truncation to a buffer boundary visible."""
+    from security import scan_upload_stream
+
+    captured = tmp_path / "seen.bin"
+    with app.app_context():
+        original = app.config.get("VIRUS_SCAN_COMMAND")
+        app.config["VIRUS_SCAN_COMMAND"] = f"tee {captured}"
+        try:
+            payload = bytes(range(256)) * 4096 + b"tail-marker"
+            file_storage = FileStorage(stream=BytesIO(payload), filename="large.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config["VIRUS_SCAN_COMMAND"] = original
+    seen = captured.read_bytes()
+    assert clean is True
+    assert len(seen) == len(payload) == 256 * 4096 + len(b"tail-marker")
+    assert seen == payload
+
+
+def test_eicar_deep_inside_a_large_file_is_rejected():
+    """A payload near the start is easy; place it far past any sample window."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        payload = b"J" * 900_000 + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" + b"J" * 1000
+        file_storage = FileStorage(stream=BytesIO(payload), filename="deep.pdf")
+        clean, message = scan_upload_stream(file_storage)
+    assert clean is False
+    assert "EICAR" in message or "Virus" in message
+
+
+def test_eicar_straddling_a_read_boundary_is_rejected():
+    """A signature that begins just before the 4096-byte mark must still match."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        payload = b"J" * 4090 + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" + b"J" * 50
+        file_storage = FileStorage(stream=BytesIO(payload), filename="straddle.pdf")
+        clean, message = scan_upload_stream(file_storage)
+    assert clean is False
+    assert "EICAR" in message or "Virus" in message
+
+
+def test_production_without_scanner_rejects_upload():
+    """Fail closed: no scanner in production means the upload is rejected."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = {
+            "VIRUS_SCAN_COMMAND": app.config.get("VIRUS_SCAN_COMMAND"),
+            "PRODUCTION_ENVIRONMENT": app.config.get("PRODUCTION_ENVIRONMENT"),
+            "UPLOAD_SCAN_FAIL_OPEN": app.config.get("UPLOAD_SCAN_FAIL_OPEN"),
+        }
+        app.config["VIRUS_SCAN_COMMAND"] = ""
+        app.config["PRODUCTION_ENVIRONMENT"] = True
+        app.config["UPLOAD_SCAN_FAIL_OPEN"] = False
+        try:
+            file_storage = FileStorage(stream=BytesIO(b"clean pdf bytes"), filename="doc.pdf")
+            clean, message = scan_upload_stream(file_storage)
+        finally:
+            app.config.update(original)
+    assert clean is False
+    assert "scanner" in message.lower()
+
+
+def test_production_owner_can_opt_into_unscanned_uploads():
+    """The documented opt-out lets the owner accept unscanned uploads."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = {
+            "VIRUS_SCAN_COMMAND": app.config.get("VIRUS_SCAN_COMMAND"),
+            "PRODUCTION_ENVIRONMENT": app.config.get("PRODUCTION_ENVIRONMENT"),
+            "UPLOAD_SCAN_FAIL_OPEN": app.config.get("UPLOAD_SCAN_FAIL_OPEN"),
+        }
+        app.config["VIRUS_SCAN_COMMAND"] = ""
+        app.config["PRODUCTION_ENVIRONMENT"] = True
+        app.config["UPLOAD_SCAN_FAIL_OPEN"] = True
+        try:
+            file_storage = FileStorage(stream=BytesIO(b"clean pdf bytes"), filename="doc.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config.update(original)
+    assert clean is True
+
+
+def test_development_without_scanner_still_accepts_upload():
+    """Development keeps working without a scanner configured."""
+    from security import scan_upload_stream
+
+    with app.app_context():
+        original = {
+            "VIRUS_SCAN_COMMAND": app.config.get("VIRUS_SCAN_COMMAND"),
+            "PRODUCTION_ENVIRONMENT": app.config.get("PRODUCTION_ENVIRONMENT"),
+        }
+        app.config["VIRUS_SCAN_COMMAND"] = ""
+        app.config["PRODUCTION_ENVIRONMENT"] = False
+        try:
+            file_storage = FileStorage(stream=BytesIO(b"clean pdf bytes"), filename="doc.pdf")
+            clean, _ = scan_upload_stream(file_storage)
+        finally:
+            app.config.update(original)
+    assert clean is True
+
+
+
+def test_csv_export_neutralizes_formula_cells():
+    from routes import csv_safe_cell
+
+    assert csv_safe_cell("=cmd|'/C calc'!A1") == "'=cmd|'/C calc'!A1"
+    assert csv_safe_cell("+1234") == "'+1234"
+    assert csv_safe_cell("-2+3") == "'-2+3"
+    assert csv_safe_cell("@SUM(A1)") == "'@SUM(A1)"
+    assert csv_safe_cell("normal text") == "normal text"
+    assert csv_safe_cell(42) == 42
+
+
+def test_time_normalization_matches_equivalent_formats():
+    from routes import normalize_time, same_visit_slot
+
+    assert normalize_time("9:00") == normalize_time("09:00")
+    assert normalize_time("9:00 AM") == "09:00"
+    assert normalize_time("9:00 PM") == "21:00"
+    assert normalize_time("0900") == "09:00"
+    assert normalize_time("12:30 AM") == "00:30"
+    assert normalize_time("12:30 PM") == "12:30"
+    assert same_visit_slot("2:00 PM", "14:00") is True
+    assert same_visit_slot("2:00 PM", "15:00") is False
+
+
+def test_double_bookings_detects_equivalent_time_formats():
+    with app.app_context():
+        client_user, _ = create_user("client")
+        caregiver, _ = create_user("caregiver")
+
+        first = Appointment(client_id=client_user.id, caregiver_id=caregiver.id, date="2031-05-01", time="9:00", status="approved")
+        second = Appointment(client_id=client_user.id, caregiver_id=caregiver.id, date="2031-05-01", time="09:00", status="approved")
+        db.session.add_all([first, second])
+        db.session.commit()
+
+        conflicts = caregiver_double_bookings([first, second])
+        assert len(conflicts) == 1
+        assert len(conflicts[0]) == 2
+
+        Appointment.query.filter(Appointment.caregiver_id == caregiver.id).delete()
+        User.query.filter(User.id.in_([client_user.id, caregiver.id])).delete()
+        db.session.commit()
+
+
+def test_admin_role_assignment_rejects_unknown_role():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        victim, _ = create_user("client")
+
+    with app.test_client() as client:
+        assert client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]}).status_code == 302
+        response = client.post(f"/admin/users/{victim.id}/role", data={"role": "superuser"}, follow_redirects=False)
+        assert response.status_code == 302
+
+    with app.app_context():
+        assert db.session.get(User, victim.id).role == "client"
+        User.query.filter(User.id.in_([admin.id, victim.id])).delete()
+        db.session.commit()
+
+
+def test_password_reset_link_is_single_use():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        user, _ = create_user("client")
+
+    with app.test_client() as client:
+        response = client.post("/auth/forgot-password", data={"email": user.email}, follow_redirects=True)
+        marker = b"/auth/reset-password/"
+        start = response.data.index(marker)
+        end = response.data.index(b"\"", start)
+        reset_path = response.data[start:end].decode("utf-8")
+        first = client.post(
+            reset_path,
+            data={"password": "NewSafePass2026!", "confirm_password": "NewSafePass2026!"},
+            follow_redirects=False,
+        )
+        assert first.status_code == 302
+        # Reusing the same link after the password changed must be rejected.
+        second = client.post(
+            reset_path,
+            data={"password": "AnotherSafe2026!", "confirm_password": "AnotherSafe2026!"},
+            follow_redirects=True,
+        )
+        assert b"already been used" in second.data
+
+    with app.app_context():
+        User.query.filter_by(id=user.id).delete()
+        db.session.commit()
+
+
+def test_seed_production_admin_refuses_promotion_without_opt_in():
+    import seed_production_admin
+
+    with app.app_context():
+        existing, _ = create_user("client")
+
+    env_backup = dict(os.environ)
+    try:
+        os.environ["ADMIN_SEED_EMAIL"] = existing.email
+        os.environ["ADMIN_SEED_PASSWORD"] = "SafePass2026!"
+        os.environ.pop("ADMIN_SEED_ALLOW_PROMOTE", None)
+        raised = False
+        try:
+            seed_production_admin.main()
+        except SystemExit:
+            raised = True
+        assert raised is True
+    finally:
+        os.environ.clear()
+        os.environ.update(env_backup)
+
+    with app.app_context():
+        assert db.session.get(User, existing.id).role == "client"
+        User.query.filter_by(id=existing.id).delete()
+        db.session.commit()
+
+
+def test_backup_dispatches_to_postgres_when_configured(monkeypatch):
+    import backup_db
+
+    calls = {}
+
+    def fake_run(cmd, check=True):
+        calls["cmd"] = cmd
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@host:5432/db")
+    monkeypatch.setattr(backup_db.subprocess, "run", fake_run)
+    # The fingerprint is captured from the source DB; this test only checks the
+    # pg_dump command, so stub it rather than reach a real server.
+    monkeypatch.setattr(
+        backup_db, "_database_fingerprint",
+        lambda url: {"client": {"rows": 1, "sha256": "x"}},
+    )
+
+    result = backup_db.create_backup(include_uploads=False)
+
+    assert calls["cmd"][0] == "pg_dump"
+    assert "--format=custom" in calls["cmd"]
+    # postgres:// must be upgraded to the modern postgresql:// scheme.
+    assert calls["cmd"][-1].startswith("postgresql://")
+    assert result.name.startswith("ables-postgres-")
+    result.unlink(missing_ok=True)
+
+
+
+def test_open_redirect_referrer_is_rejected():
+    from routes import safe_redirect
+
+    with app.test_request_context("/"):
+        response = safe_redirect("https://evil.example.com/steal", "main.contact")
+        assert response.headers["Location"].endswith("/contact")
+
+    with app.test_request_context("/"):
+        response = safe_redirect("//evil.example.com/steal", "main.contact")
+        assert response.headers["Location"].endswith("/contact")
+
+    with app.test_request_context("/"):
+        response = safe_redirect("/care", "main.contact")
+        assert response.headers["Location"] == "/care"
+
+
+def test_public_forms_reject_empty_and_invalid_email():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("invalid-email")
+
+    with app.test_client() as client:
+        empty_contact = client.post("/contact", data={}, follow_redirects=False)
+        assert empty_contact.status_code == 302
+        assert empty_contact.headers["Location"].endswith("/contact")
+
+        bad_email = client.post(
+            "/contact",
+            data={"name": "Bad Email", "email": "not-an-email", "message": "Hello"},
+            follow_redirects=False,
+        )
+        assert bad_email.status_code == 302
+        assert bad_email.headers["Location"].endswith("/contact")
+
+        empty_referral = client.post("/referrals", data={}, follow_redirects=False)
+        assert empty_referral.status_code == 302
+        assert empty_referral.headers["Location"].endswith("/referrals")
+
+    with app.app_context():
+        assert Inquiry.query.filter_by(email="not-an-email").first() is None
+        assert Inquiry.query.filter_by(email=email).first() is None
+
+
+def test_employment_application_requires_consent():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("no-consent")
+
+    with app.test_client() as client:
+        response = client.post(
+            "/employment-application",
+            data={
+                "credential_type": "RN",
+                "name": "No Consent",
+                "email": email,
+                "phone": "301-326-2225",
+                "experience": "Some experience",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/employment-application")
+
+    with app.app_context():
+        assert CaregiverApplication.query.filter_by(email=email).first() is None
+
+
+def test_launch_readiness_is_not_public():
+    with app.test_client() as client:
+        response = client.get("/launch-readiness", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/auth/login" in response.headers["Location"]
+
+
+def test_inactive_user_session_is_rejected():
+    with app.app_context():
+        user, password = create_user("client")
+
+    with app.test_client() as client:
+        assert login(client, user, password).status_code == 302
+        assert client.get("/dashboard").status_code == 200
+
+        with app.app_context():
+            account = db.session.get(User, user.id)
+            account.is_active_account = False
+            db.session.commit()
+
+        # The existing session must stop working once the account is disabled.
+        protected = client.get("/dashboard", follow_redirects=False)
+        assert protected.status_code == 302
+        assert "/auth/login" in protected.headers["Location"]
+
+    with app.app_context():
+        User.query.filter_by(id=user.id).delete()
+
+
+def test_password_change_invalidates_other_sessions():
+    with app.app_context():
+        user, password = create_user("client")
+
+    with app.test_client() as client:
+        assert login(client, user, password).status_code == 302
+        assert client.get("/dashboard").status_code == 200
+
+        # Simulate a password change elsewhere (another device/session).
+        with app.app_context():
+            account = db.session.get(User, user.id)
+            account.password = generate_password_hash("RotatedPass2026!")
+            db.session.commit()
+
+        protected = client.get("/dashboard", follow_redirects=False)
+        assert protected.status_code == 302
+        assert "/auth/login" in protected.headers["Location"]
+
+    with app.app_context():
+        User.query.filter_by(id=user.id).delete()
+        db.session.commit()
+
+
+def test_login_rate_limit_uses_shared_database_store():
+    from datetime import datetime, timezone, timedelta
+    from security import LOGIN_WINDOW, LoginAttempt
+
+    with app.app_context():
+        key = "203.0.113.77"
+        LoginAttempt.query.filter_by(key=key).delete()
+        db.session.commit()
+        # A failure recorded by one worker must be visible to the limiter that
+        # any other worker reads from the shared store.
+        db.session.add(LoginAttempt(key=key))
+        db.session.commit()
+        recent = LoginAttempt.query.filter(
+            LoginAttempt.key == key,
+            LoginAttempt.attempted_at >= datetime.now(timezone.utc) - LOGIN_WINDOW,
+        ).count()
+        assert recent == 1
+
+        # Stale attempts outside the window are pruned and do not count.
+        stale = LoginAttempt(
+            key=key,
+            attempted_at=datetime.now(timezone.utc) - LOGIN_WINDOW - timedelta(minutes=1),
+        )
+        db.session.add(stale)
+        db.session.commit()
+        LoginAttempt.query.filter(
+            LoginAttempt.attempted_at < datetime.now(timezone.utc) - LOGIN_WINDOW
+        ).delete()
+        db.session.commit()
+        assert LoginAttempt.query.filter_by(key=key).count() == 1
+        LoginAttempt.query.filter_by(key=key).delete()
+        db.session.commit()
+
+
+def test_content_type_mismatch_is_rejected():
+    from routes import content_matches_extension
+
+    assert content_matches_extension("ok.pdf", b"%PDF-1.7 body")
+    assert content_matches_extension("ok.png", b"\x89PNG\r\n\x1a\nrest")
+    assert content_matches_extension("ok.docx", b"PK\x03\x04rest")
+    assert not content_matches_extension("fake.pdf", b"MZ\x90\x00windows binary")
+    assert not content_matches_extension("fake.png", b"<html>not an image</html>")
+
+
+def test_breached_password_check_fails_open_without_network(monkeypatch):
+    from security import password_is_breached
+
+    def boom(*args, **kwargs):
+        raise OSError("network unavailable")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    with app.app_context():
+        app.config["PASSWORD_BREACH_CHECK_ENABLED"] = True
+        try:
+            # A network failure must never block account creation.
+            assert password_is_breached("SafePass2026!") is False
+            assert password_is_breached("") is False
+        finally:
+            app.config["PASSWORD_BREACH_CHECK_ENABLED"] = False
+
+
+def test_breached_password_check_can_be_disabled():
+    from security import password_is_breached
+
+    with app.app_context():
+        app.config["PASSWORD_BREACH_CHECK_ENABLED"] = False
+        # Disabled means no outbound call and no rejection.
+        assert password_is_breached("password") is False
+
+
+def test_public_form_honeypot_blocks_submission():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("honeypot")
+    with app.app_context():
+        Inquiry.query.filter_by(email=email).delete()
+        db.session.commit()
+
+    with app.test_client() as client:
+        response = client.post(
+            "/contact",
+            data={
+                "name": "Spam Bot",
+                "email": email,
+                "message": "Hello, please contact me.",
+                "website": "http://spam.example.com",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert "/thank-you" not in response.headers["Location"]
+
+    with app.app_context():
+        assert Inquiry.query.filter_by(email=email).first() is None
+
+
+def test_public_form_rejects_link_spam():
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("spamlink")
+    with app.app_context():
+        Inquiry.query.filter_by(email=email).delete()
+        db.session.commit()
+
+    with app.test_client() as client:
+        response = client.post(
+            "/contact",
+            data={
+                "name": "Link Spammer",
+                "email": email,
+                "message": "Buy cheap pills at http://example-spam.test/offer",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert "/thank-you" not in response.headers["Location"]
+
+    with app.app_context():
+        assert Inquiry.query.filter_by(email=email).first() is None
+
+
+def test_public_form_rate_limit_blocks_repeat_submissions():
+    app.config["WTF_CSRF_ENABLED"] = False
+    from security import PUBLIC_FORM_LIMIT, LoginAttempt
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:quick-message:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+    with app.test_client() as client:
+        blocked_at = None
+        for index in range(PUBLIC_FORM_LIMIT + 2):
+            response = client.post(
+                "/quick-message",
+                data={"name": "Repeat", "contact": "repeat@example.com", "message": "Please call me back."},
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+            if "/thank-you" not in response.headers["Location"] and blocked_at is None:
+                blocked_at = index
+        # At most the configured number of submissions get through.
+        assert blocked_at == PUBLIC_FORM_LIMIT
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:quick-message:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+
+def test_forgot_password_rate_limit_blocks_repeat_requests():
+    app.config["WTF_CSRF_ENABLED"] = False
+    from security import PUBLIC_FORM_LIMIT, LoginAttempt
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:password_reset:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+    with app.test_client() as client:
+        blocked = False
+        for _ in range(PUBLIC_FORM_LIMIT + 2):
+            response = client.post(
+                "/auth/forgot-password",
+                data={"email": "nobody@example.com"},
+                follow_redirects=True,
+            )
+            if b"Too many reset requests" in response.data:
+                blocked = True
+        # The endpoint must throttle repeated reset requests from one client.
+        assert blocked is True
+
+    with app.app_context():
+        LoginAttempt.query.filter(LoginAttempt.key.like("form:password_reset:%")).delete(synchronize_session=False)
+        db.session.commit()
+
+
+def test_admin_dashboard_shows_notification_failure_alert():
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+        db.session.add(NotificationLog(
+            channel="email",
+            recipient="admin@example.com",
+            subject="New Ables Home Healthcare website inquiry",
+            status="failed",
+            provider="smtp",
+            error="Connection refused",
+        ))
+        db.session.commit()
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+        response = client.get("/dashboard")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    # Staff must see that a notification did not send, not a silent success.
+    assert "failed to send" in body
+    assert "/admin/notifications" in body
+
+    with app.app_context():
+        User.query.filter_by(id=admin.id).delete()
+
+
+def test_last_active_admin_cannot_be_demoted_or_deleted():
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+        admin_id = admin.id
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+
+        demote = client.post(
+            f"/admin/users/{admin_id}/role",
+            data={"role": "client"},
+            follow_redirects=False,
+        )
+        assert demote.status_code == 302
+
+        delete = client.post(
+            f"/admin/users/{admin_id}/delete",
+            data={},
+            follow_redirects=False,
+        )
+        assert delete.status_code == 302
+
+    with app.app_context():
+        # The only active administrator must still exist and keep the admin role.
+        still_admin = db.session.get(User, admin_id)
+        assert still_admin is not None
+        assert still_admin.role == "admin"
+
+    with app.app_context():
+        User.query.filter_by(id=admin_id).delete()
+        db.session.commit()
+
+
+
+
+def test_admin_global_search_finds_older_records():
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["ADMIN_RECOVERY_CODES_REQUIRED"] = False
+    with app.app_context():
+        admin, password, _ = create_admin_with_codes()
+        # Create enough newer rows to exceed the old 250-row in-Python window.
+        for i in range(260):
+            db.session.add(Inquiry(
+                name=f"Filler {i}",
+                email=f"filler-{i}-{uuid.uuid4().hex}@example.com",
+                message="filler",
+            ))
+        db.session.add(Inquiry(
+            name="Zelda Needle",
+            email=f"needle-{uuid.uuid4().hex}@example.com",
+            message="unique needle marker for search",
+        ))
+        db.session.commit()
+
+    with app.test_client() as client:
+        assert login(client, admin, password).status_code == 302
+        response = client.get("/admin/search?q=needle%20marker")
+    assert response.status_code == 200
+    assert b"Zelda Needle" in response.data
+
+    with app.app_context():
+        Inquiry.query.filter(Inquiry.name.like("Filler %")).delete(synchronize_session=False)
+        User.query.filter_by(id=admin.id).delete()
+        db.session.commit()
+
+
+def test_csv_export_neutralizes_formula_injection():
+    from routes import csv_safe_cell
+
+    assert csv_safe_cell("=cmd|' /C calc'!A0") == "'=cmd|' /C calc'!A0"
+    assert csv_safe_cell("+1234") == "'+1234"
+    assert csv_safe_cell("-2+3") == "'-2+3"
+    assert csv_safe_cell("@SUM(A1)") == "'@SUM(A1)"
+    # Ordinary text and numbers are untouched.
+    assert csv_safe_cell("Normal note") == "Normal note"
+    assert csv_safe_cell(42) == 42
+
+
+def test_normalize_date_canonicalizes_common_formats():
+    from routes import normalize_date
+
+    assert normalize_date("2026-03-01") == "2026-03-01"
+    assert normalize_date("03/01/2026") == "2026-03-01"
+    assert normalize_date("3-1-2026") == "2026-03-01"
+    assert normalize_date("March 1, 2026") == "2026-03-01"
+    assert normalize_date("") == ""
+    # Unrecognized text is preserved rather than silently dropped.
+    assert normalize_date("next week") == "next week"
+
+
+def test_client_cannot_download_another_clients_document():
+    """Cross-account document access must be denied (owner_id is enforced).
+
+    A real file is written so the owner's own download returns 200; that proves
+    the intruder's denial comes from the authorization check and not merely from
+    a missing file on disk.
+    """
+    app.config["WTF_CSRF_ENABLED"] = False
+    upload_dir = Path(app.config["UPLOAD_FOLDER"]) / "documents"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"private-{uuid.uuid4().hex}.pdf"
+    (upload_dir / stored_name).write_bytes(b"%PDF-1.4 owner private document")
+    try:
+        with app.app_context():
+            owner, owner_password = create_user("client")
+            intruder, intruder_password = create_user("client")
+            document = ClientDocument(
+                owner_id=owner.id,
+                uploaded_by_id=owner.id,
+                title="Owner Private File",
+                category="Intake",
+                filename=stored_name,
+                original_filename="private.pdf",
+            )
+            db.session.add(document)
+            db.session.commit()
+            document_id = document.id
+
+        with app.test_client() as client:
+            assert login(client, owner, owner_password).status_code == 302
+            owner_response = client.get(f"/documents/{document_id}/download")
+        assert owner_response.status_code == 200
+
+        with app.test_client() as client:
+            assert login(client, intruder, intruder_password).status_code == 302
+            response = client.get(f"/documents/{document_id}/download")
+        # Denied before any file is served (403), or not found; never 200.
+        assert response.status_code in (403, 404)
+    finally:
+        (upload_dir / stored_name).unlink(missing_ok=True)
+
+
+def test_deactivating_an_account_invalidates_its_existing_session():
+    """A disabled user must not keep using a session established earlier."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        user, password = create_user("client")
+
+    with app.test_client() as client:
+        assert login(client, user, password).status_code == 302
+        assert client.get("/dashboard").status_code == 200
+
+        with app.app_context():
+            account = db.session.get(User, user.id)
+            account.is_active_account = False
+            db.session.commit()
+
+        after = client.get("/dashboard")
+    # The stale session must no longer reach an authenticated page.
+    assert after.status_code in (302, 401, 403)
+    if after.status_code == 302:
+        assert "/auth/login" in after.headers.get("Location", "")
+
+
+def test_anonymous_cannot_download_a_document():
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        owner, _ = create_user("client")
+        document = ClientDocument(
+            owner_id=owner.id,
+            uploaded_by_id=owner.id,
+            title="Anonymous Probe",
+            category="Intake",
+            filename="probe.pdf",
+            original_filename="probe.pdf",
+        )
+        db.session.add(document)
+        db.session.commit()
+        document_id = document.id
+
+    with app.test_client() as client:
+        response = client.get(f"/documents/{document_id}/download")
+    assert response.status_code in (302, 401, 403)
+
+
+def test_role_changes_are_restricted_to_the_allowlist():
+    """A crafted role value must not grant admin; it falls back safely."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        admin, password, codes = create_admin_with_codes()
+        target, _ = create_user("client")
+
+    with app.test_client() as client:
+        client.post("/auth/login", data={"email": admin.email, "password": password, "recovery_code": codes[0]})
+        response = client.post(
+            f"/admin/users/{target.id}/role",
+            data={"role": "superadmin"},
+            follow_redirects=False,
+        )
+    assert response.status_code in (200, 302)
+    with app.app_context():
+        assert db.session.get(User, target.id).role != "superadmin"
+
+
+PUBLIC_FORM_SUBMISSIONS = [
+    (
+        "/contact",
+        {"name": "Ada", "email": "ada@example.com", "message": "Please call me about care."},
+        Inquiry,
+    ),
+    (
+        "/referrals",
+        {
+            "referral_source": "Hospital",
+            "source_phone": "301-555-0100",
+            "client_name": "Client A",
+        },
+        Referral,
+    ),
+    (
+        "/free-consultation",
+        {
+            "name": "Ada",
+            "email": "ada@example.com",
+            "phone": "301-555-0101",
+            "message": "Interested in care",
+        },
+        Inquiry,
+    ),
+    (
+        "/schedule-consultation",
+        {
+            "name": "Ada",
+            "email": "ada@example.com",
+            "phone": "301-555-0102",
+            "message": "Please schedule a visit",
+        },
+        Inquiry,
+    ),
+]
+
+
+@pytest.mark.parametrize("path,payload,model", PUBLIC_FORM_SUBMISSIONS)
+def test_public_form_commit_failure_returns_clean_error_not_500(path, payload, model, monkeypatch):
+    """A failed commit must roll back and show a clear error, never a 500.
+
+    The audit found the public form handlers called db.session.commit()
+    unguarded, so a database error surfaced as an unhandled exception with no
+    rollback and no message. This forces the commit to fail and checks the
+    visitor gets a redirect and that no partial record was stored.
+    """
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        before = model.query.count()
+
+    def failing_commit():
+        raise RuntimeError("simulated database failure")
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+    try:
+        with app.test_client() as client:
+            response = client.post(path, data=payload, follow_redirects=False)
+    finally:
+        monkeypatch.undo()
+
+    assert response.status_code < 500, f"{path} leaked a {response.status_code} error page"
+    assert response.status_code == 302
+
+    with app.app_context():
+        assert model.query.count() == before, f"{path} stored a partial record"
+
+
+def test_public_form_commit_failure_rolls_back_the_session(monkeypatch):
+    """The session must be rolled back, not left in a dirty/failed state."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    rolled_back = {"called": False}
+    original_rollback = db.session.rollback
+
+    def failing_commit():
+        raise RuntimeError("simulated database failure")
+
+    def tracking_rollback():
+        rolled_back["called"] = True
+        return original_rollback()
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+    monkeypatch.setattr(db.session, "rollback", tracking_rollback)
+    try:
+        with app.test_client() as client:
+            client.post("/contact", data={"name": "Ada", "email": "ada@example.com", "message": "Hi"})
+    finally:
+        monkeypatch.undo()
+
+    assert rolled_back["called"] is True
+
+
+def test_register_commit_failure_returns_clean_error(monkeypatch):
+    """Registration must not leak a 500 when the account cannot be saved."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    email = unique_email("register-fail")
+
+    def failing_commit():
+        raise RuntimeError("simulated database failure")
+
+    monkeypatch.setattr(db.session, "commit", failing_commit)
+    try:
+        with app.test_client() as client:
+            response = client.post(
+                "/auth/register",
+                data={
+                    "name": "Registration Failure",
+                    "email": email,
+                    "password": "SafePass2026!",
+                    "confirm_password": "SafePass2026!",
+                },
+                follow_redirects=False,
+            )
+    finally:
+        monkeypatch.undo()
+
+    assert response.status_code < 500
+    assert response.status_code == 302
+    with app.app_context():
+        assert User.query.filter_by(email=email).first() is None
+
+
+
 

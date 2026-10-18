@@ -1,10 +1,5 @@
 from app import app
-
-
-DEVELOPMENT_SECRET_KEYS = {
-    "dev-secret-change-later",
-    "dev-change-this-before-production",
-}
+from config import DEVELOPMENT_SECRET_KEYS
 
 PLACEHOLDER_MARKERS = (
     "REPLACE_",
@@ -17,6 +12,46 @@ PLACEHOLDER_MARKERS = (
 def configured(value):
     text = str(value or "")
     return bool(text) and not any(marker in text for marker in PLACEHOLDER_MARKERS)
+
+
+def database_driver_available(database_uri):
+    """True when the Python driver for the configured database is importable."""
+    import importlib.util
+
+    uri = str(database_uri or "")
+    if uri.startswith(("postgresql://", "postgres://")):
+        return importlib.util.find_spec("psycopg2") is not None
+    if uri.startswith(("mysql://", "mysql+pymysql://", "mariadb://")):
+        return importlib.util.find_spec("pymysql") is not None
+    if uri.startswith("sqlite:///"):
+        return True
+    return True
+
+
+def database_backup_tool_available(database_uri):
+    """True when the host has the dump tool matching the configured database."""
+    import shutil
+
+    uri = str(database_uri or "")
+    if uri.startswith(("postgresql://", "postgres://")):
+        return shutil.which("pg_dump") is not None
+    if uri.startswith(("mysql://", "mysql+pymysql://", "mariadb://")):
+        return shutil.which("mysqldump") is not None or shutil.which("mariadb-dump") is not None
+    return True
+
+
+def offsite_destination_is_off_site(spec):
+    """True only for a destination that survives losing the production host.
+
+    An ``sftp://`` URL is off-site. A bare path or ``file://`` URL is not, even
+    when set: a directory on the production host — including a second folder on
+    the same hosting account — is lost with that host, so it must not satisfy a
+    readiness check that claims off-site protection exists.
+    """
+    spec = str(spec or "").strip()
+    if not spec:
+        return False
+    return spec.lower().startswith("sftp://")
 
 
 CHECKS = [
@@ -38,7 +73,17 @@ CHECKS = [
     (
         "Production database",
         lambda c: configured(c.get("SQLALCHEMY_DATABASE_URI")) and not c.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite:///"),
-        "Set DATABASE_URL to PostgreSQL before collecting real client data.",
+        "Set DATABASE_URL to PostgreSQL or MySQL/MariaDB before collecting real client data.",
+    ),
+    (
+        "Database driver installed",
+        lambda c: database_driver_available(c.get("SQLALCHEMY_DATABASE_URI", "")),
+        "Install the driver for the configured database (psycopg2-binary for PostgreSQL, PyMySQL for MySQL/MariaDB).",
+    ),
+    (
+        "Database backup tool installed",
+        lambda c: database_backup_tool_available(c.get("SQLALCHEMY_DATABASE_URI", "")),
+        "Install the matching dump tool on the host (pg_dump for PostgreSQL, mysqldump/mariadb-dump for MySQL/MariaDB).",
     ),
     (
         "SMTP email",
@@ -61,6 +106,36 @@ CHECKS = [
         "HTTPS enforcement",
         lambda c: c.get("FORCE_HTTPS") is True,
         "Set FORCE_HTTPS=true in production.",
+    ),
+    (
+        "Admin recovery codes required",
+        lambda c: c.get("ADMIN_RECOVERY_CODES_REQUIRED") is True,
+        "Set ADMIN_RECOVERY_CODES_REQUIRED=true in production.",
+    ),
+    (
+        "Upload antivirus scanner",
+        lambda c: configured(c.get("VIRUS_SCAN_COMMAND")),
+        "Set VIRUS_SCAN_COMMAND (for example: clamdscan --stream) so uploads are really scanned.",
+    ),
+    (
+        "Stable backup fingerprint key",
+        lambda c: configured(c.get("BACKUP_FINGERPRINT_KEY")),
+        "Set BACKUP_FINGERPRINT_KEY to a stable, backed-up value. It authenticates "
+        "backup fingerprints; without it the key is derived from SECRET_KEY, so "
+        "rotating SECRET_KEY would make older backups unverifiable.",
+    ),
+    (
+        "Off-site backup destination",
+        lambda c: offsite_destination_is_off_site(c.get("OFFSITE_BACKUP_URL", "")),
+        "Set OFFSITE_BACKUP_URL to a destination that survives losing the "
+        "production host (for example sftp://user@backup-host/path, with "
+        "OFFSITE_BACKUP_KEY and OFFSITE_SFTP_KNOWN_HOSTS). A directory on the "
+        "production host is not an off-site backup.",
+    ),
+    (
+        "Durable upload storage",
+        lambda c: bool(c.get("UPLOAD_FOLDER")) and not str(c.get("UPLOAD_FOLDER", "")).startswith(("/tmp", "/var/tmp")),
+        "Point UPLOAD_FOLDER at persistent storage; /tmp is wiped on restart or redeploy.",
     ),
     (
         "Secure sessions",

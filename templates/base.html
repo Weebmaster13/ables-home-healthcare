@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Ables Home Healthcare | Skilled and Non-Skilled Nursing Care{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}Ables Home Healthcare provides Skilled and Non-Skilled Nursing Care, personal support, caregiver staffing, and client intake support in Maryland.{% endblock %}">
+    {% block robots %}{% if request.path.startswith('/portal') or request.path.startswith('/administrator') or request.path.startswith('/auth') %}<meta name="robots" content="noindex, follow">{% endif %}{% endblock %}
     <link rel="canonical" href="{{ config.SITE_BASE_URL }}{{ request.path }}">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Ables Home Healthcare">
@@ -183,6 +184,7 @@
   </button>
   <form class="quick-chat-panel" id="quickChatPanel" method="POST" action="/quick-message" hidden>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% include "partials/honeypot.html" %}
     <strong>Message Ables Home Healthcare</strong>
     <p>Send a quick note. Staff will respond as soon as possible during office follow-up.</p>
     <label>

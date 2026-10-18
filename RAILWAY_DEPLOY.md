@@ -1,3 +1,5 @@
+> **Superseded:** see [DEPLOYMENT.md](DEPLOYMENT.md) for the authoritative deployment guide.
+
 # Railway Deploy Notes
 
 Use this if the site is deployed on Railway instead of Render.

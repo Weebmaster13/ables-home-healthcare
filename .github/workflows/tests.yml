@@ -1,0 +1,200 @@
+# Fast unit/regression suite. The deployment-smoke workflow only triggers on a
+# narrow path list, so a test-only or config-only commit previously produced no
+# CI record at all. This runs the suite on every push and pull request so the
+# pass/fail count is independently verifiable.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches the cPanel target interpreter reported by preflight_cpanel.py.
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Run the test suite
+        run: python -m pytest -q
+
+  # Runs the live MySQL/MariaDB tests (connection + full backup/restore round
+  # trip) against a real server, so the documented restore drill is verified
+  # reproducibly rather than only by hand. Without MYSQL_TEST_URL those tests
+  # skip, which is why this job sets it.
+  pytest-mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Verify the live server is reachable
+        run: |
+          mysql --version
+          mysqladmin --protocol=tcp --host=127.0.0.1 --port=3306 --user=root --password=root ping
+
+      - name: Run the suite with the live database drill enabled
+        env:
+          MYSQL_TEST_URL: "mysql+pymysql://root:root@127.0.0.1:3306/"
+        run: python -m pytest -q
+
+  # Runs the live PostgreSQL restore drill against a real server, so the
+  # documented `backup_db.py --restore-to` path for PostgreSQL is verified
+  # reproducibly. Without POSTGRES_TEST_URL that test skips, which is why this
+  # job sets it. pg_dump refuses to dump a server newer than itself, and the
+  # ubuntu-latest image ships the v16 client, so the service is pinned to
+  # postgres:16 to keep the client and server majors aligned.
+  pytest-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ables_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Show client tool versions
+        run: |
+          pg_dump --version
+          pg_restore --version
+          psql --version
+
+      - name: Run the suite with the live PostgreSQL drill enabled
+        env:
+          POSTGRES_TEST_URL: "postgresql://postgres:postgres@127.0.0.1:5432/ables_test"
+        run: |
+          set -o pipefail
+          python -m pytest -q -rs 2>&1 | tee /tmp/pytest-postgres.log
+          # Guard against the drill silently skipping (e.g. a future runner
+          # image shipping a pg_dump major that no longer matches the service).
+          if grep -q "live PostgreSQL drill skipped" /tmp/pytest-postgres.log; then
+            echo "::error::the live PostgreSQL drill skipped instead of running"
+            exit 1
+          fi
+
+  # Runs the off-site backup drill against a real OpenSSH sftp server on the
+  # runner, so the documented `backup_db.py --offsite` transfer is verified
+  # reproducibly (encrypted, key-based, host-key-pinned) rather than only by
+  # hand. No external service or credential is used: the server, key, and
+  # destination are all throwaway and local to the job.
+  pytest-offsite-sftp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pyyaml
+
+      - name: Start a throwaway sftp server
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/offsite-drill"
+          mkdir -p "$ROOT/keys"
+          sudo useradd -m -s /bin/bash offsite
+          # A locked account is refused even for key auth; '*' is a valid
+          # password hash that still permits public-key login.
+          sudo usermod -p '*' offsite
+          ssh-keygen -q -t ed25519 -N '' -f "$ROOT/keys/id_offsite"
+          sudo mkdir -p /home/offsite/.ssh
+          sudo cp "$ROOT/keys/id_offsite.pub" /home/offsite/.ssh/authorized_keys
+          sudo chown -R offsite:offsite /home/offsite
+          sudo chmod 700 /home/offsite
+          sudo chmod 600 /home/offsite/.ssh/authorized_keys
+          sudo ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key_drill
+          # sshd refuses to start without its privilege-separation directory.
+          sudo mkdir -p /run/sshd
+          cat > "$ROOT/sshd_config" <<EOF
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey /etc/ssh/ssh_host_ed25519_key_drill
+          PidFile $ROOT/sshd.pid
+          UsePAM no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          PermitRootLogin no
+          Subsystem sftp internal-sftp
+          AuthorizedKeysFile /home/offsite/.ssh/authorized_keys
+          EOF
+          sudo /usr/sbin/sshd -f "$ROOT/sshd_config"
+          for i in $(seq 1 10); do
+            if ssh-keyscan -p 2222 -t ed25519 127.0.0.1 > "$ROOT/known_hosts" 2>/dev/null && [ -s "$ROOT/known_hosts" ]; then
+              break
+            fi
+            sleep 1
+          done
+          test -s "$ROOT/known_hosts"
+
+      - name: Run the off-site tests with the live SFTP drill enabled
+        env:
+          OFFSITE_SFTP_TEST_URL: "sftp://offsite@127.0.0.1:2222/home/offsite"
+          OFFSITE_BACKUP_KEY: "${{ runner.temp }}/offsite-drill/keys/id_offsite"
+          OFFSITE_SFTP_KNOWN_HOSTS: "${{ runner.temp }}/offsite-drill/known_hosts"
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_offsite_backup.py -q -rs 2>&1 | tee /tmp/pytest-offsite.log
+          # The live test must run, not skip, or the transfer is unverified.
+          if grep -q "live SFTP transfer drill" /tmp/pytest-offsite.log; then
+            echo "::error::the live SFTP drill skipped instead of running"
+            exit 1
+          fi
+
+      - name: Show sshd log on failure
+        if: failure()
+        run: sudo cat /var/log/auth.log 2>/dev/null | tail -50 || true
