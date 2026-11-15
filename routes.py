@@ -1749,7 +1749,19 @@ def health_detail_checks():
         "MAIL_USERNAME": current_app.config.get("MAIL_USERNAME"),
         "MAIL_PASSWORD": current_app.config.get("MAIL_PASSWORD"),
     }
-    checks["smtp"] = "ok" if all(mail_keys.values()) else "not_configured"
+    try:
+        delivery_sent = NotificationLog.query.filter_by(channel="email", status="sent").count()
+    except Exception:
+        delivery_sent = 0
+
+    # Ready when either fully configured (relay + credentials), or a server
+    # is set and at least one notification actually went out (open relay,
+    # e.g. local cPanel Exim on port 25).
+    checks["smtp"] = (
+        "ok"
+        if all(mail_keys.values()) or (mail_keys["MAIL_SERVER"] and delivery_sent > 0)
+        else "not_configured"
+    )
     checks["smtp_keys"] = {
         key: "present" if value else "missing"
         for key, value in mail_keys.items()
@@ -2446,9 +2458,9 @@ def admin_launch_checklist():
             "href": url_for("main.admin_system_status"),
         },
         {
-            "label": "PostgreSQL active",
-            "ready": checks.get("database_backend") == "postgresql",
-            "detail": f"Database backend: {checks.get('database_backend', 'unknown')}.",
+            "label": "Production database",
+            "ready": checks.get("database_backend") in ("postgresql", "mysql"),
+            "detail": f"Database backend: {checks.get('database_backend', 'unknown')}. Local development uses sqlite.",
             "href": url_for("main.admin_system_status"),
         },
         {
