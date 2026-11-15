@@ -143,7 +143,10 @@ p { margin: 0 0 0.9em; }
   .header-nav { flex: 1 1 100%; width: 100%; }
   .header-nav-list { border-top: 1px solid var(--line); padding-top: 6px; width: 100%; }
   .header-nav-list > li > a { padding: 12px 10px; font-size: 0.72rem; letter-spacing: 0.06em; min-height: 44px; }
-  .nav-submenu { position: static; display: none; border: none; box-shadow: none; padding: 0 0 0 14px; min-width: 0; background: var(--sand); border-radius: 8px; margin: 4px 0 8px; }
+  .header-nav-list { position: relative; }
+  .header-nav-list > li.nav-has-menu { position: static; }
+  .nav-submenu { position: absolute; top: 100%; left: 0; right: 0; z-index: 960; min-width: 0; width: 100%; display: none; border: 1px solid var(--line); border-top: 3px solid var(--gold); box-shadow: 0 16px 30px rgba(16, 41, 74, 0.2); padding: 8px 14px 14px; margin: 0; max-height: 60vh; overflow-y: auto; border-radius: 0 0 12px 12px; background: var(--paper); }
+  .nav-submenu a { padding: 11px 10px; }
   .nav-has-menu.open > .nav-submenu { display: block; }
   .header-actions { width: 100%; justify-content: flex-end; padding-top: 10px; }
 }
@@ -821,8 +824,10 @@ a.stat-card.stat-link:focus-visible { outline: 2px solid var(--pine); outline-of
 
 
 /* ---------- Scroll-hide nav row (logo stays visible) ---------- */
-.header-bottom { max-height: 90px; overflow: hidden; transition: max-height .28s ease, padding .28s ease, opacity .2s ease; }
-.header-bottom.is-hidden { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
+/* Collapse with max-height + visibility only. Never clip this box: the
+   nav dropdown submenus are descendants and must paint outside it. */
+.header-bottom { max-height: 90px; overflow: visible; visibility: visible; opacity: 1; transition: max-height .28s ease, padding .28s ease, opacity .2s ease, visibility .28s ease; }
+.header-bottom.is-hidden { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; visibility: hidden; pointer-events: none; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .header-bottom { transition: none !important; }
   .header-bottom.is-hidden { max-height: 90px !important; overflow: visible !important; opacity: 1 !important; padding-top: 2px !important; padding-bottom: 2px !important; }
