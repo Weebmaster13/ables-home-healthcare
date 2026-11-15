@@ -1,156 +1,291 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set total_items = stats.users + stats.appointments + stats.inquiries + stats.referrals + stats.care_plans + stats.applications %}
+{% set attention = (stats.open_work / total_items * 100) if total_items else 0 %}
+{% set ring_c = 326.73 %}
+{% set ring_offset = ring_c - (ring_c * attention / 100) %}
 
-<div class="page-hero simple-hero">
-    <span class="eyebrow">Admin dashboard</span>
-    <h1>Admin dashboard</h1>
-    <p class="lead">Welcome Admin</p>
-    <p>Monitor users, non-medical care requests, appointments, inquiries, and referrals.</p>
-    <form method="POST" action="/auth/logout" class="mt-3">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-outline-primary">Log Out</button>
-    </form>
+<div class="dash-shell">
+
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="dash-sidebar">
+        <div class="dash-brand">
+            <img src="{{ url_for('static', filename='img/brand/ablelogo-mark.jpg') }}" alt="Ables Home Healthcare">
+            <span class="dash-brand-name">Ables</span>
+        </div>
+
+        <nav class="dash-nav" aria-label="Dashboard">
+            <a class="dash-nav-link active" href="/dashboard" title="Overview">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                <span>Overview</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/appointments" title="Appointments">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span>Appointments</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/inquiries" title="Inquiries">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11l5 5v5z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                <span>Inquiries</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/applications" title="Applications">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                <span>Applications</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/users" title="Clients and caregivers">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>People</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/care-plans" title="Care plans">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+                <span>Care plans</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/reports" title="Reports">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <span>Reports</span>
+            </a>
+            <a class="dash-nav-link" href="/admin/security" title="Settings and security">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Security</span>
+            </a>
+        </nav>
+
+        <div class="dash-side-bottom">
+            <div class="dash-side-user">
+                <span class="dash-avatar">{{ (current_user.name or 'A')[0]|upper }}</span>
+                <span class="dash-side-user-name">{{ current_user.name or 'Admin' }}</span>
+            </div>
+            <a class="dash-nav-link dash-logout" href="/auth/logout" title="Log out">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                <span>Log out</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <div class="dash-main">
+
+        <header class="dash-topbar">
+            <form class="dash-search" method="GET" action="/admin/search" role="search">
+                <svg class="dash-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <label class="visually-hidden" for="dashSearch">Search admin</label>
+                <input id="dashSearch" name="q" placeholder="Search clients, inquiries, care plans...">
+                <button type="submit" aria-label="Search">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </button>
+            </form>
+            <div class="dash-top-actions">
+                <span class="dash-date">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    {{ now_date }}
+                </span>
+                <a class="dash-icon-btn" href="/messages" aria-label="Notifications">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    {% if stats.messages %}<span class="dash-badge">{{ stats.messages }}</span>{% endif %}
+                </a>
+                <span class="dash-avatar dash-avatar-top">{{ (current_user.name or 'A')[0]|upper }}</span>
+            </div>
+        </header>
+
+        <div class="dash-body">
+            <div class="dash-grid">
+
+                <!-- Main column -->
+                <div class="dash-col dash-col-main">
+
+                    <div class="dash-head">
+                        <h1>Dashboard</h1>
+                        <p class="dash-sub">Ables Home Healthcare &middot; Silver Spring, Maryland</p>
+                    </div>
+
+                    <!-- Stat cards -->
+                    <div class="dash-stats">
+                        <div class="dash-card dash-ring-card">
+                            <div class="dash-ring">
+                                <svg viewBox="0 0 120 120">
+                                    <circle class="dash-ring-bg" cx="60" cy="60" r="52"></circle>
+                                    <circle class="dash-ring-val" cx="60" cy="60" r="52"
+                                            stroke-dasharray="{{ ring_c }}"
+                                            stroke-dashoffset="{{ ring_offset }}"></circle>
+                                </svg>
+                                <div class="dash-ring-center">
+                                    <strong>{{ stats.open_work }}</strong>
+                                    <span>Open work</span>
+                                </div>
+                            </div>
+                            <div class="dash-ring-legend">
+                                <span><i class="dot dot-pine"></i>Inquiries {{ stats.inquiries }}</span>
+                                <span><i class="dot dot-gold"></i>Applications {{ stats.applications }}</span>
+                                <span><i class="dot dot-muted"></i>Appointments {{ stats.appointments }}</span>
+                            </div>
+                        </div>
+
+                        <div class="dash-card dash-stat">
+                            <div class="dash-stat-icon dash-stat-icon-pine">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            </div>
+                            <div class="dash-stat-body">
+                                <strong>{{ stats.users }}</strong>
+                                <span>Total users</span>
+                            </div>
+                        </div>
+
+                        <div class="dash-card dash-stat">
+                            <div class="dash-stat-icon dash-stat-icon-gold">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            </div>
+                            <div class="dash-stat-body">
+                                <strong>{{ stats.appointments }}</strong>
+                                <span>Appointments</span>
+                            </div>
+                        </div>
+
+                        <div class="dash-card dash-stat">
+                            <div class="dash-stat-icon dash-stat-icon-ink">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11l5 5v5z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                            </div>
+                            <div class="dash-stat-body">
+                                <strong>{{ stats.inquiries }}</strong>
+                                <span>Inquiries</span>
+                            </div>
+                        </div>
+
+                        <div class="dash-card dash-stat">
+                            <div class="dash-stat-icon dash-stat-icon-pine">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+                            </div>
+                            <div class="dash-stat-body">
+                                <strong>{{ stats.care_plans }}</strong>
+                                <span>Care plans</span>
+                            </div>
+                        </div>
+
+                        <div class="dash-card dash-stat">
+                            <div class="dash-stat-icon dash-stat-icon-gold">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                            </div>
+                            <div class="dash-stat-body">
+                                <strong>{{ stats.referrals }}</strong>
+                                <span>Referrals</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lists -->
+                    <div class="dash-panels">
+
+                        <section class="dash-card dash-list-card">
+                            <header class="dash-card-head">
+                                <h2>Recent inquiries</h2>
+                                <a class="dash-link" href="/admin/inquiries">View all &rsaquo;</a>
+                            </header>
+                            {% if recent_inquiries %}
+                            <ul class="dash-rows">
+                                {% for item in recent_inquiries %}
+                                <li class="dash-row">
+                                    <span class="dash-row-avatar">{{ (item.name or '?')[0]|upper }}</span>
+                                    <div class="dash-row-body">
+                                        <strong>{{ item.name }}</strong>
+                                        <span>{{ item.reason }}{% if item.phone %} &middot; {{ item.phone }}{% elif item.email %} &middot; {{ item.email }}{% endif %}</span>
+                                    </div>
+                                    <span class="dash-pill dash-pill-{{ item.status|lower|replace(' ', '-') }}">{{ item.status }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <div class="dash-empty">No inquiries yet.</div>
+                            {% endif %}
+                        </section>
+
+                        <section class="dash-card dash-list-card">
+                            <header class="dash-card-head">
+                                <h2>Recent applications</h2>
+                                <a class="dash-link" href="/admin/applications">View all &rsaquo;</a>
+                            </header>
+                            {% if recent_applications %}
+                            <ul class="dash-rows">
+                                {% for item in recent_applications %}
+                                <li class="dash-row">
+                                    <span class="dash-row-avatar">{{ (item.name or '?')[0]|upper }}</span>
+                                    <div class="dash-row-body">
+                                        <strong>{{ item.name }}</strong>
+                                        <span>{{ item.availability or 'Availability not provided' }}{% if item.certifications %} &middot; {{ item.certifications }}{% endif %}</span>
+                                    </div>
+                                    <span class="dash-pill dash-pill-{{ item.status|lower|replace(' ', '-') }}">{{ item.status }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <div class="dash-empty">No caregiver applications yet.</div>
+                            {% endif %}
+                        </section>
+
+                    </div>
+
+                    <section class="dash-card dash-list-card">
+                        <header class="dash-card-head">
+                            <h2>New registrations</h2>
+                            <a class="dash-link" href="/admin/users">View users &rsaquo;</a>
+                        </header>
+                        {% if recent_users %}
+                        <ul class="dash-rows">
+                            {% for account in recent_users %}
+                            <li class="dash-row">
+                                <span class="dash-row-avatar">{{ (account.name or '?')[0]|upper }}</span>
+                                <div class="dash-row-body">
+                                    <strong>{{ account.name }}</strong>
+                                    <span>{{ account.email }}</span>
+                                </div>
+                                <span class="dash-pill dash-pill-role">{{ account.role }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <div class="dash-empty">No registered users yet.</div>
+                        {% endif %}
+                    </section>
+
+                </div>
+
+                <!-- Right rail -->
+                <aside class="dash-col dash-col-rail">
+
+                    <div class="dash-card dash-profile">
+                        <span class="dash-profile-avatar">{{ (current_user.name or 'A')[0]|upper }}</span>
+                        <strong>{{ current_user.name or 'Admin' }}</strong>
+                        <span class="dash-profile-role">{{ current_user.role|title }}</span>
+                        <span class="dash-profile-email">{{ current_user.email }}</span>
+                    </div>
+
+                    <div class="dash-card dash-activity">
+                        <h3>Your activity</h3>
+                        <div class="dash-activity-num">{{ stats.open_work }}</div>
+                        <p>Open work items need attention</p>
+                        <a class="dash-btn" href="/admin/work-queue">Work queue</a>
+                    </div>
+
+                    <div class="dash-card dash-messages">
+                        <h3>Messages</h3>
+                        <div class="dash-activity-num">{{ stats.messages }}</div>
+                        <p>Unread portal messages</p>
+                        <a class="dash-btn" href="/messages">Open messages</a>
+                    </div>
+
+                    <div class="dash-card dash-readiness">
+                        <h3>Launch readiness</h3>
+                        <p class="dash-readiness-status">
+                            <span class="dash-pill {{ 'dash-pill-approved' if email_ready else 'dash-pill-pending' }}">
+                                Email {{ 'configured' if email_ready else 'not configured' }}
+                            </span>
+                        </p>
+                        <a class="dash-btn" href="/launch-readiness">View checklist</a>
+                    </div>
+
+                </aside>
+
+            </div>
+        </div>
+    </div>
+
 </div>
-
-<section class="dashboard-stats">
-    <div class="stat-card"><span>Users</span><strong>{{ stats.users }}</strong></div>
-    <div class="stat-card"><span>Appointments</span><strong>{{ stats.appointments }}</strong></div>
-    <div class="stat-card"><span>Pending</span><strong>{{ stats.pending }}</strong></div>
-    <div class="stat-card"><span>Inquiries</span><strong>{{ stats.inquiries }}</strong></div>
-    <div class="stat-card"><span>Referrals</span><strong>{{ stats.referrals }}</strong></div>
-    <div class="stat-card"><span>Care Plans</span><strong>{{ stats.care_plans }}</strong></div>
-    <div class="stat-card"><span>Applications</span><strong>{{ stats.applications }}</strong></div>
-    <a class="stat-card stat-link" href="/admin/messages"><span>Messages</span><strong>{{ stats.messages }}</strong></a>
-    <a class="stat-card stat-link" href="/admin/work-queue"><span>Open Work</span><strong>{{ stats.open_work }}</strong></a>
-</section>
-
-<section class="admin-search-panel mt-4" aria-labelledby="adminSearchHeading">
-    <div>
-        <span class="eyebrow">Find anything</span>
-        <h2 id="adminSearchHeading">Admin global search</h2>
-        <p>Search clients, caregivers, inquiries, referrals, applications, care plans, and appointments from one place.</p>
-    </div>
-    <form method="GET" action="/admin/search" class="admin-search-form" role="search">
-        <label class="visually-hidden" for="adminDashboardSearch">Search admin records</label>
-        <input id="adminDashboardSearch" name="q" class="form-control" placeholder="Name, email, phone, status, service, city">
-        <button class="btn btn-primary">Search</button>
-    </form>
-</section>
-
-<section class="readiness-strip mt-4">
-    <div>
-        <span class="eyebrow">Production status</span>
-        <h2>Email delivery is {% if email_ready %}configured{% else %}not configured yet{% endif %}.</h2>
-        <p>
-            {% if email_ready %}
-            Website forms can send admin notifications using the configured SMTP settings.
-            {% else %}
-            Forms still save to the database, but ADMIN_EMAIL/SMTP settings must be configured before launch.
-            {% endif %}
-        </p>
-    </div>
-    <a class="btn btn-primary" href="/launch-readiness">Launch Checklist</a>
-</section>
-
-<section class="row g-4 mt-2">
-    <div class="col-lg-7">
-        <div class="content-card h-100">
-            <h2 class="h4">Recent inquiries</h2>
-            {% if recent_inquiries %}
-                <div class="clean-list">
-                    {% for item in recent_inquiries %}
-                    <div>
-                        <strong>{{ item.name }}</strong>
-                        <span>{{ item.reason }} | {{ item.phone or item.email }} | {{ item.status }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <div class="empty-state">No inquiries yet. New consultation, contact, referral, and application messages will appear here.</div>
-            {% endif %}
-        </div>
-    </div>
-    <div class="col-lg-5">
-        <div class="content-card h-100">
-            <h2 class="h4">Quick actions</h2>
-            <div class="dashboard-actions">
-                <a href="/admin/appointments" class="btn btn-primary">Manage Appointments</a>
-                <a href="/admin/schedule" class="btn btn-outline-primary">Schedule Board</a>
-                <a href="/admin/work-queue" class="btn btn-outline-primary">Work Queue</a>
-                <a href="/admin/search" class="btn btn-outline-primary">Global Search</a>
-                <a href="/admin/reports" class="btn btn-outline-primary">Reports & Exports</a>
-                <a href="/admin/system-status" class="btn btn-outline-primary">System Status</a>
-                <a href="/admin/caregiver-conflicts" class="btn btn-outline-primary">Caregiver Conflicts</a>
-                <a href="/admin/audit" class="btn btn-outline-primary">Audit Search</a>
-                <a href="/admin/users" class="btn btn-outline-primary">Manage Users</a>
-                <a href="/admin/users/create" class="btn btn-outline-primary">Add User or Caregiver</a>
-                <a href="/admin/inquiries" class="btn btn-outline-primary">View Inquiries</a>
-                <a href="/admin/care-plans" class="btn btn-outline-primary">Care Plans</a>
-                <a href="/admin/applications" class="btn btn-outline-primary">Applications</a>
-                <a href="/admin/messages" class="btn btn-outline-primary">Portal Messages</a>
-                <a href="/admin/security" class="btn btn-outline-primary">Security Monitor</a>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="row g-4 mt-2">
-    <div class="col-lg-7">
-        <div class="content-card h-100">
-            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-                <h2 class="h4 mb-0">Recent caregiver applications</h2>
-                <a class="btn btn-outline-primary btn-sm" href="/admin/applications">View All</a>
-            </div>
-            {% if recent_applications %}
-                <div class="clean-list">
-                    {% for item in recent_applications %}
-                    <div>
-                        <strong>{{ item.name }}</strong>
-                        <span>{{ item.phone }} | {{ item.email }} | {{ item.status }}</span>
-                        <span>{{ item.availability or "Availability not provided" }}{% if item.certifications %} | {{ item.certifications }}{% endif %}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <div class="empty-state">No caregiver applications yet. Public applications submitted at /employment-application will appear here.</div>
-            {% endif %}
-        </div>
-    </div>
-    <div class="col-lg-5">
-        <div class="content-card h-100">
-            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-                <h2 class="h4 mb-0">Recent account registrations</h2>
-                <a class="btn btn-outline-primary btn-sm" href="/admin/users">View Users</a>
-            </div>
-            {% if recent_users %}
-                <div class="clean-list">
-                    {% for account in recent_users %}
-                    <div>
-                        <strong>{{ account.name }}</strong>
-                        <span>{{ account.email }} | {{ account.role }}</span>
-                        <span>{{ account.created_at.strftime("%Y-%m-%d") if account.created_at else "Date unavailable" }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <div class="empty-state">No registered users yet.</div>
-            {% endif %}
-        </div>
-    </div>
-</section>
-
-<section class="row g-4 mt-2">
-    {% for item in readiness_items[:3] %}
-    <div class="col-md-4">
-        <div class="readiness-card h-100">
-            <span>{{ item.status }}</span>
-            <h2>{{ item.title }}</h2>
-            <p>{{ item.body }}</p>
-        </div>
-    </div>
-    {% endfor %}
-</section>
-
 {% endblock %}
-

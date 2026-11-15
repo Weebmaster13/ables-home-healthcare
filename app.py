@@ -1,5 +1,6 @@
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from datetime import datetime
 import logging
 
 from flask import Flask, redirect, request, url_for
@@ -71,6 +72,7 @@ def register_template_helpers(app):
             "admin_unread_messages": 0,
             "user_unread_messages": 0,
             "max_upload_mb": int(app.config.get("MAX_CONTENT_LENGTH", 0) / (1024 * 1024)),
+            "now_date": datetime.now().strftime("%A, %d.%m.%Y"),
         }
         if not current_user.is_authenticated:
             return counts
