@@ -20,5 +20,5 @@
   <path d="M56 47v14M49 54h14" stroke="#f2b84b" stroke-width="5" stroke-linecap="round"/>
   <text x="104" y="47" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="800" fill="#ffffff">Ables Home</text>
   <text x="104" y="75" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="800" fill="url(#gold)">Healthcare</text>
-  <text x="246" y="92" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#ffffff" opacity="0.76">Silver Spring, MD</text>
+  
 </svg>

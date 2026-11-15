@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 
+{% block title %}Family Testimonials | Ables Home Healthcare{% endblock %}
+{% block meta_description %}What Maryland families say about Ables Home Healthcare caregivers, daily support, and responsiveness at home.{% endblock %}
+
 {% block content %}
 
 <div class="page-hero faq-hero">
@@ -9,6 +12,7 @@
 </div>
 
 <section class="row g-4">
+    {% if testimonials %}
     {% for item in testimonials %}
     <div class="col-lg-4">
         <div class="testimonial-card h-100">
@@ -18,6 +22,7 @@
         </div>
     </div>
     {% endfor %}
+    {% endif %}
 </section>
 
 <section class="content-band mt-4">

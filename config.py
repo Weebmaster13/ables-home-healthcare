@@ -51,11 +51,32 @@ def is_production_environment(database_uri):
     return bool(os.environ.get("DATABASE_URL")) and not database_uri.startswith("sqlite:///")
 
 
+DEFAULT_SECRET_KEY = "dev-secret-change-later"
+
+
+def secret_key(production=None):
+    """Return the session signing key, refusing weak keys in production.
+
+    A missing, short, or publicly known key would let an attacker forge
+    sessions and password-reset tokens, so production must fail fast.
+    """
+    value = os.environ.get("SECRET_KEY", "").strip()
+    if production is None:
+        production = is_production_environment(database_url())
+    if not production:
+        return value or DEFAULT_SECRET_KEY
+    if not value or value == DEFAULT_SECRET_KEY or len(value) < 32:
+        raise RuntimeError(
+            "SECRET_KEY must be set to a unique value of at least 32 "
+            "characters before running in production."
+        )
+    return value
+
+
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-later")
     SITE_BASE_URL = os.environ.get(
         "SITE_BASE_URL",
-        "https://ables-home-healthcare.onrender.com"
+        "https://ableshomehealthcare.com"
     ).rstrip("/")
     SQLALCHEMY_DATABASE_URI = database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -65,14 +86,27 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(BASE_DIR, "instance", "uploads"))
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(5 * 1024 * 1024)))
     PRODUCTION_ENVIRONMENT = is_production_environment(SQLALCHEMY_DATABASE_URI)
+    SECRET_KEY = secret_key(production=PRODUCTION_ENVIRONMENT)
     AUTO_MIGRATE_ON_STARTUP = env_bool("AUTO_MIGRATE_ON_STARTUP", env_bool("RENDER"))
-    REMEMBER_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", PRODUCTION_ENVIRONMENT)
+    SESSION_COOKIE_NAME = "ables_session"
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", PRODUCTION_ENVIRONMENT)
+    REMEMBER_COOKIE_SECURE = env_bool("REMEMBER_COOKIE_SECURE", PRODUCTION_ENVIRONMENT)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_REFRESH_EACH_REQUEST = True
+    # Bad requests and unexpected exceptions must be rendered by the app,
+    # not re-raised to Passenger (which returns a bare 502 page). The
+    # branded 400/403/404/413/500 handlers cover these paths.
+    TRAP_BAD_REQUEST_ERRORS = env_bool("TRAP_BAD_REQUEST_ERRORS", False)
+    PROPAGATE_EXCEPTIONS = env_bool("PROPAGATE_EXCEPTIONS", False)
+    # Hardening: prefer https for generated URLs; enforce CSRF over TLS in prod.
+    PREFERRED_URL_SCHEME = "https" if PRODUCTION_ENVIRONMENT else "http"
+    WTF_CSRF_SSL_STRICT = env_bool("WTF_CSRF_SSL_STRICT", PRODUCTION_ENVIRONMENT)
+    # Hardening: cap cookie size and static cache duration.
+    MAX_COOKIE_SIZE = 4093
+    SEND_FILE_MAX_AGE_DEFAULT = int(os.environ.get("SEND_FILE_MAX_AGE_DEFAULT", "31536000"))
     PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.environ.get("SESSION_HOURS", "8")))
-    WTF_CSRF_TIME_LIMIT = int(os.environ.get("WTF_CSRF_TIME_LIMIT", "3600"))
+    WTF_CSRF_TIME_LIMIT = int(os.environ.get("WTF_CSRF_TIME_LIMIT", "14400"))
     FORCE_HTTPS = env_bool("FORCE_HTTPS", PRODUCTION_ENVIRONMENT)
     ACCOUNT_LOCKOUT_ATTEMPTS = int(os.environ.get("ACCOUNT_LOCKOUT_ATTEMPTS", "5"))
     ACCOUNT_LOCKOUT_MINUTES = int(os.environ.get("ACCOUNT_LOCKOUT_MINUTES", "15"))

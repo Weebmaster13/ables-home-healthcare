@@ -19,6 +19,32 @@ def configured(value):
     return bool(text) and not any(marker in text for marker in PLACEHOLDER_MARKERS)
 
 
+def database_driver_available(database_uri):
+    """True when the Python driver for the configured database is importable."""
+    import importlib.util
+
+    uri = str(database_uri or "")
+    if uri.startswith(("postgresql://", "postgres://")):
+        return importlib.util.find_spec("psycopg2") is not None
+    if uri.startswith(("mysql://", "mysql+pymysql://", "mariadb://")):
+        return importlib.util.find_spec("pymysql") is not None
+    if uri.startswith("sqlite:///"):
+        return True
+    return True
+
+
+def database_backup_tool_available(database_uri):
+    """True when the host has the dump tool matching the configured database."""
+    import shutil
+
+    uri = str(database_uri or "")
+    if uri.startswith(("postgresql://", "postgres://")):
+        return shutil.which("pg_dump") is not None
+    if uri.startswith(("mysql://", "mysql+pymysql://", "mariadb://")):
+        return shutil.which("mysqldump") is not None or shutil.which("mariadb-dump") is not None
+    return True
+
+
 CHECKS = [
     (
         "Production mode",

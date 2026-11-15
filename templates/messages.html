@@ -15,26 +15,26 @@
         <form method="POST" class="contact-form compact-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            <label class="form-label">Topic</label>
-            <select name="topic" class="form-select" required>
+            <label class="form-label" for="topic">Topic</label>
+            <select name="topic" id="topic" class="form-select" required>
                 <option value="">Choose topic</option>
                 {% for topic in message_topics %}
                 <option value="{{ topic }}">{{ topic }}</option>
                 {% endfor %}
             </select>
 
-            <label class="form-label">Priority</label>
-            <select name="priority" class="form-select">
+            <label class="form-label" for="priority">Priority</label>
+            <select name="priority" id="priority" class="form-select">
                 <option value="normal">Normal</option>
                 <option value="high">High</option>
                 <option value="urgent">Urgent scheduling or safety concern</option>
             </select>
 
-            <label class="form-label">Subject</label>
-            <input name="subject" class="form-control" maxlength="160" required placeholder="Short title">
+            <label class="form-label" for="subject">Subject</label>
+            <input name="subject" id="subject" class="form-control" maxlength="160" required placeholder="Short title">
 
-            <label class="form-label">Message</label>
-            <textarea name="body" class="form-control" rows="6" required placeholder="Include the date, client name, appointment, or question so the office can help faster."></textarea>
+            <label class="form-label" for="body">Message</label>
+            <textarea name="body" id="body" class="form-control" rows="6" required placeholder="Include the date, client name, appointment, or question so the office can help faster."></textarea>
 
             <button class="btn btn-primary mt-3">Send Message</button>
         </form>
@@ -61,7 +61,7 @@
                 <p><strong>Billing question</strong> Include insurance or payment details without sharing sensitive numbers.</p>
             </div>
         </div>
-        <a class="btn btn-outline-primary mt-3" href="tel:+13014553030">Call Office</a>
+        <a class="btn btn-outline-primary mt-3" href="tel:+13013262225">Call Office</a>
     </div>
 </section>
 

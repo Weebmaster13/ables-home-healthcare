@@ -9,3 +9,13 @@ instance/logs/
 .env.production
 .env.oracle
 .secrets.cpanel
+
+# Deployment artefacts and scratch files (not part of the application)
+*.zip
+*.log
+backups/
+deploy_package/
+wordpress/
+tools/
+biol141*
+flask_*.log

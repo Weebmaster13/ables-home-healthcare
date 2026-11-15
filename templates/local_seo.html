@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}{{ page.title }} | Ables Home Healthcare{% endblock %}
-{% block meta_description %}{{ page.body }} Request a Become a Client from Ables Home Healthcare.{% endblock %}
+{% block meta_description %}{{ page.body|striptags|truncate(155, end='...') }} Request a free consultation from Ables Home Healthcare.{% endblock %}
 
 {% block content %}
 

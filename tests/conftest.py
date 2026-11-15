@@ -22,4 +22,10 @@ def pytest_runtest_setup(item):
         for table in reversed(db.metadata.sorted_tables):
             db.session.execute(table.delete())
         db.session.commit()
+    try:
+        import security
+        security.LOGIN_ATTEMPTS.clear()
+        security.PUBLIC_FORM_ATTEMPTS.clear()
+    except Exception:
+        pass
 

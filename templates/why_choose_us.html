@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 
+{% block title %}Why Choose Ables Home Healthcare | Maryland Home Care{% endblock %}
+{% block meta_description %}Why Maryland families choose Ables Home Healthcare: screened caregivers, clear communication, flexible scheduling, and dependable daily support at home.{% endblock %}
+
 {% block content %}
 
 <div class="page-hero simple-hero">
@@ -31,6 +34,7 @@
         <span class="eyebrow">What families look for</span>
         <h2>Trust is built before the first visit.</h2>
     </div>
+    {% if testimonials %}
     <div class="row g-4">
         {% for item in testimonials %}
         <div class="col-lg-4">
@@ -42,6 +46,7 @@
         </div>
         {% endfor %}
     </div>
+    {% endif %}
 </section>
 
 {% endblock %}

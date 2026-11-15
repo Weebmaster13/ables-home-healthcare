@@ -1,5 +1,14 @@
 (function () {
     const body = document.body;
+    const isAuthenticated = body.dataset.authenticated === "true";
+
+    // localStorage can throw in private/incognito or when storage is blocked.
+    function lsGet(key) {
+        try { return window.localStorage.getItem(key); } catch (error) { return null; }
+    }
+    function lsSet(key, value) {
+        try { window.localStorage.setItem(key, value); } catch (error) { /* ignore */ }
+    }
     const sideNav = document.getElementById("sideNav");
     const navToggle = document.getElementById("navToggle");
     const mobileNavToggle = document.getElementById("mobileNavToggle");
@@ -11,17 +20,17 @@
     const quickChatPanel = document.getElementById("quickChatPanel");
     const desktopQuery = window.matchMedia("(min-width: 992px)");
 
-    if (localStorage.getItem("ables-nav") === "collapsed") {
+    if (lsGet("ables-nav") === "collapsed") {
         body.classList.add("nav-collapsed");
     }
 
-    if (cookieBanner && localStorage.getItem("ables-cookie-ok") !== "yes") {
+    if (cookieBanner && lsGet("ables-cookie-ok") !== "yes") {
         cookieBanner.hidden = false;
     }
 
     if (cookieAccept) {
         cookieAccept.addEventListener("click", function () {
-            localStorage.setItem("ables-cookie-ok", "yes");
+            lsSet("ables-cookie-ok", "yes");
             if (cookieBanner) {
                 cookieBanner.hidden = true;
             }
@@ -43,7 +52,7 @@
 
         if (desktopQuery.matches) {
             body.classList.toggle("nav-collapsed");
-            localStorage.setItem(
+            lsSet(
                 "ables-nav",
                 body.classList.contains("nav-collapsed") ? "collapsed" : "open"
             );
@@ -737,23 +746,37 @@
                 "google_translate_element"
             );
 
-            triggerFullPageTranslation(localStorage.getItem("ables-language") || "en", 0);
+            if (!isAuthenticated) {
+                triggerFullPageTranslation(lsGet("ables-language") || "en", 0);
+            }
         };
 
-        const savedLanguage = localStorage.getItem("ables-language") || "en";
+        const savedLanguage = lsGet("ables-language") || "en";
         rememberOriginals(document.body);
-        languageSelect.value = savedLanguage;
-        applyLanguage(savedLanguage);
 
-        languageSelect.addEventListener("change", function () {
-            localStorage.setItem("ables-language", languageSelect.value);
-            applyLanguage(languageSelect.value);
-        });
+        if (isAuthenticated) {
+            // Portal/admin pages can contain PHI. Never send that text to
+            // Google automatically; the signed-in main content is also
+            // marked .notranslate server-side.
+            languageSelect.value = "en";
+            languageSelect.disabled = true;
+            if (languageMessage) {
+                languageMessage.textContent = "Translation is off while you are signed in.";
+            }
+        } else {
+            languageSelect.value = savedLanguage;
+            applyLanguage(savedLanguage);
+
+            languageSelect.addEventListener("change", function () {
+                lsSet("ables-language", languageSelect.value);
+                applyLanguage(languageSelect.value);
+            });
+        }
     }
 
     document.querySelectorAll(".nav-group").forEach(function (group, index) {
         const storageKey = "ables-nav-group-" + index;
-        const savedState = localStorage.getItem(storageKey);
+        const savedState = lsGet(storageKey);
 
         if (savedState === "closed") {
             group.removeAttribute("open");
@@ -762,7 +785,7 @@
         }
 
         group.addEventListener("toggle", function () {
-            localStorage.setItem(storageKey, group.open ? "open" : "closed");
+            lsSet(storageKey, group.open ? "open" : "closed");
         });
     });
 
@@ -1008,5 +1031,101 @@
             onScroll();
         }
     } catch (e) { /* no-op: core nav still works */ }
+
+    // Dropdown menus: hover on desktop, tap to open on narrow screens.
+    try {
+        var wideQuery = window.matchMedia("(min-width: 1080px)");
+        document.querySelectorAll(".nav-has-menu > a").forEach(function (toggle) {
+            toggle.addEventListener("click", function (event) {
+                if (wideQuery.matches) {
+                    return;
+                }
+                event.preventDefault();
+                var parent = toggle.parentElement;
+                var wasOpen = parent.classList.contains("open");
+                document.querySelectorAll(".nav-has-menu.open").forEach(function (item) {
+                    item.classList.remove("open");
+                });
+                if (!wasOpen) {
+                    parent.classList.add("open");
+                }
+            });
+        });
+        document.addEventListener("click", function (event) {
+            if (!event.target.closest(".nav-has-menu")) {
+                document.querySelectorAll(".nav-has-menu.open").forEach(function (item) {
+                    item.classList.remove("open");
+                });
+            }
+        });
+    } catch (e) { /* no-op */ }
 })();
 
+
+// ---------------------------------------------------------------------------
+// Scroll reveal: sections and cards slide and fade in as they enter the view
+// ---------------------------------------------------------------------------
+(function () {
+    try {
+        var nodes = [];
+        var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        if (!reduce && "IntersectionObserver" in window) {
+            var selectors = [
+                ".section-heading", ".service-group", ".fact", ".process-step", ".start-item",
+                ".content-card", ".action-card", ".value-item", ".report-card", ".readiness-card",
+                ".company-page-card", ".mission-card", ".contact-panel", ".premium-form",
+                ".auth-form", ".stat-card", ".admin-action-group", ".check-list", ".service-index",
+                ".path-bar", ".care-jump", ".fact-list", ".clean-list",
+                ".services-groups", ".process-grid", ".facts-grid", ".home-image-grid",
+                ".postcard-grid", ".start-grid", ".footer-grid", ".photo-grid", ".info-box"
+            ].join(", ");
+
+            nodes = Array.prototype.slice.call(document.querySelectorAll(selectors));
+            var counters = new WeakMap();
+
+            nodes.forEach(function (el) {
+                var parent = el.parentElement || el;
+                var index = counters.get(parent) || 0;
+                counters.set(parent, index + 1);
+                var direction = index % 3 === 1 ? "left" : (index % 3 === 2 ? "right" : "");
+                el.setAttribute("data-reveal", direction);
+                el.style.transitionDelay = Math.min(index * 80, 400) + "ms";
+            });
+        }
+
+        // Reveal anything that is already (or has come) into view.  This runs on
+        // scroll as well as through the observer, so content can never get
+        // stuck invisible if the observer is throttled.
+        function revealInView() {
+            var height = window.innerHeight || 800;
+            for (var i = 0; i < nodes.length; i++) {
+                var el = nodes[i];
+                if (el.classList.contains("is-visible")) { continue; }
+                var rect = el.getBoundingClientRect();
+                if (rect.top < height * 0.92) {
+                    el.classList.add("is-visible");
+                }
+            }
+        }
+
+        if (nodes.length) {
+            if ("IntersectionObserver" in window) {
+                var observer = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (entry) {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add("is-visible");
+                            observer.unobserve(entry.target);
+                        }
+                    });
+                }, { threshold: 0.08, rootMargin: "0px 0px -4% 0px" });
+                nodes.forEach(function (el) { observer.observe(el); });
+            }
+            window.addEventListener("scroll", revealInView, { passive: true });
+            window.addEventListener("load", revealInView);
+            window.addEventListener("resize", revealInView);
+            revealInView();
+            window.setTimeout(revealInView, 1500);
+        }
+    } catch (e) { /* no-op: content stays visible */ }
+})();

@@ -10,7 +10,7 @@ from flask_login import current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
-from models import AdminRecoveryCode, AuditLog
+from models import AdminRecoveryCode, AuditLog, Inquiry, Referral
 
 
 LOGIN_ATTEMPTS = defaultdict(list)
@@ -134,7 +134,8 @@ def scan_upload_stream(file_storage):
         return True, "No file"
 
     position = file_storage.stream.tell()
-    sample = file_storage.stream.read(4096)
+    file_storage.stream.seek(0)
+    sample = file_storage.stream.read()
     file_storage.stream.seek(position)
 
     if b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in sample:
@@ -201,6 +202,37 @@ def public_form_is_limited():
 
 def record_public_form():
     PUBLIC_FORM_ATTEMPTS[rate_limit_key()].append(datetime.now(timezone.utc))
+
+
+DUPLICATE_SUBMIT_WINDOW = timedelta(minutes=2)
+
+
+def _recent_match(rows, created_attr="created_at"):
+    cutoff = utc_now() - DUPLICATE_SUBMIT_WINDOW
+    for row in rows:
+        stamped = normalize_dt(getattr(row, created_attr, None))
+        if stamped is not None and stamped >= cutoff:
+            return True
+    return False
+
+
+def recent_duplicate_inquiry(email, message):
+    """True when the same email+message was stored within the window.
+
+    Double-clicks and retry storms then share one record and one
+    notification instead of several. Distinct content always passes.
+    """
+    rows = (Inquiry.query.filter_by(email=email or "", message=message or "")
+            .order_by(Inquiry.id.desc()).limit(5).all())
+    return _recent_match(rows)
+
+
+def recent_duplicate_referral(referral_source, client_name, notes):
+    rows = (Referral.query.filter_by(
+        referral_source=referral_source or "",
+        client_name=client_name or "", notes=notes or "")
+        .order_by(Referral.id.desc()).limit(5).all())
+    return _recent_match(rows)
 
 
 def safe_redirect_url(value, fallback="/"):

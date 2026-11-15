@@ -15,16 +15,15 @@ def test_home_is_compact_two_page_hub():
         assert html.count("<h1") == 1
         assert "/care" in html
         assert "301-455-3030" in html
-        assert "301-326-2225" not in html
-        assert "tel:+13014553030" in html
+        assert "301-326-2225" in html
+        assert "tel:+13013262225" in html
         assert "R3114" in html
-        # original postcard faces preserved with enlarge links
+        # postcard faces link to corrected (updated) artwork
         assert "postcard-front-corrected.jpg" in html
         assert "postcard-back-corrected.jpg" in html
-        assert "postcard-front-print.jpg" in html
-        assert "postcard-back-print.jpg" in html
-        # no video centerpiece, no carousel
+        # The hero uses the still photo; no looping video on the homepage
         assert "<video" not in html
+        assert "hero-family-room-1280.jpg" in html
         assert "hero-carousel" not in html
 
 
@@ -49,12 +48,13 @@ def test_care_page_has_all_three_working_forms():
                      "requirements", 'name="resume"']:
             assert f'{name}' in html
         assert "301-455-3030" in html
-        assert "301-326-2225" not in html
+        assert "301-326-2225" in html
 
 
 def test_public_phone_links_use_authoritative_target():
     with _client() as client:
         for url in ["/", "/care", "/contact", "/brochure"]:
             html = client.get(url).data.decode()
-            assert "tel:3013262225" not in html
-            assert "301-326-2225" not in html
+            assert "tel:+13014553030" not in html
+            assert "tel:+13013262225" in html
+            assert "301-455-3030" in html

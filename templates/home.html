@@ -1,26 +1,39 @@
 {% extends "base.html" %}
 
 {% block title %}Ables Home Healthcare | Skilled and Non-Skilled Nursing Care in Maryland{% endblock %}
-{% block meta_description %}Ables Home Healthcare in Silver Spring, Maryland: skilled and non-skilled nursing care, personal support, and caregiver staffing. Call 301-455-3030.{% endblock %}
+{% block meta_description %}Ables Home Healthcare: skilled and non-skilled nursing care, personal support, and caregiver staffing. Call 301-326-2225.{% endblock %}
 
 {% block content %}
 
 <section class="home-hero" aria-labelledby="homeHeroTitle">
-    <div class="home-hero-grid">
-        <div class="home-hero-copy">
-            <p class="eyebrow">Pursuing Excellence · Silver Spring, Maryland</p>
-            <h1 id="homeHeroTitle">Care at home, from people you can trust.</h1>
-            <p class="home-hero-lead">Skilled Nursing &amp; Non-Skilled Nursing Care Provider for infants, children, young and older adults.</p>
-            <div class="hero-actions home-hero-actions">
-                <a class="btn btn-primary btn-lg" href="/care#request-care">Become a Client</a>
-                <a class="btn btn-light btn-lg" href="/care#contact">Contact Us</a>
-            </div>
-            <p class="home-hero-trust">Call <a href="tel:+13014553030">301-455-3030</a> · Fax 301-326-2270</p>
-        </div>
-        <div class="home-hero-media">
-            <img src="{{ url_for('static', filename='img/care/hero-family-room-v2.png') }}" alt="A caregiver talking with an older adult and a family member in a bright living room" fetchpriority="high" decoding="async">
-        </div>
+    <div class="home-hero-photo">
+        <img src="{{ url_for('static', filename='img/care/hero-family-room-1280.jpg') }}" alt="A caregiver talking with an older adult and a family member in a bright living room" fetchpriority="high" decoding="async">
     </div>
+
+    <div class="home-hero-panel">
+        <p class="eyebrow">Skilled and Non-Skilled Nursing Care</p>
+        <h1 id="homeHeroTitle"><span class="hero-h1-lead">Care at home, from</span> people you can trust.</h1>
+        <p class="home-hero-lead">Skilled Nursing &amp; Non-Skilled Nursing Care Provider for infants, children, young and older adults.</p>
+        <div class="hero-actions home-hero-actions">
+            <a class="btn btn-primary btn-lg" href="/care#request-care">Become a Client</a>
+            <a class="btn btn-outline-invert btn-lg" href="/care#contact">Contact Us</a>
+        </div>
+        <p class="home-hero-trust">Call <a href="tel:+13013262225">301-326-2225</a> &middot; Fax 301-326-2270</p>
+    </div>
+
+    <div class="home-hero-cards">
+        <a class="home-hero-card" href="/schedule-consultation">
+            <span>Start here</span>
+            <h2>Schedule a Free Consultation</h2>
+            <p>Our care coordinator will meet with you and your family at home to talk through options.</p>
+        </a>
+        <a class="home-hero-card" href="/service-areas">
+            <span>Where we work</span>
+            <h2>Serving Montgomery County</h2>
+            <p>Personal care, companion care, respite care and skilled nursing across Maryland.</p>
+        </a>
+    </div>
+
     <nav class="path-bar" aria-label="Popular next steps">
         <a href="/care#request-care">Request care</a>
         <a href="/care#caregiver">Become a caregiver</a>
@@ -32,25 +45,45 @@
     <div class="section-heading">
         <span class="eyebrow">Services</span>
         <h2 id="servicesHeading">What we help with.</h2>
-        <p>Skilled nursing alongside everyday non-skilled support. Availability depends on assessment, schedule, and licensing.</p>
+        <p>Skilled nursing and non-skilled support. Availability depends on assessment, schedule, and licensing.</p>
     </div>
     <div class="services-groups">
         <div class="service-group">
+            <span class="eyebrow">Clinical</span>
             <h3>Skilled nursing care</h3>
-            <p>Licensed nursing support exactly as listed in the company brochure: initial &amp; follow-up assessments, wound care, catheter care, tube feeding, IV therapy &amp; injections, tracheotomy &amp; ventilation care, and evaluation of the home environment.</p>
+            <p class="mb-2">Licensed nursing support exactly as listed in the company brochure:</p>
+            <ul class="service-index">
+                <li>Initial &amp; follow-up assessments</li>
+                <li>Wound care</li>
+                <li>Catheter care</li>
+                <li>Tube feeding</li>
+                <li>IV therapy &amp; injections</li>
+                <li>Tracheotomy &amp; ventilation care</li>
+                <li>Evaluation of the home environment</li>
+            </ul>
+            <a class="card-link" href="/services">View all services &rarr;</a>
         </div>
         <div class="service-group">
-            <h3>Non-skilled daily support</h3>
+            <span class="eyebrow">Everyday support</span>
+            <h3>Non-skilled nursing care</h3>
             <ul class="service-index">
                 {% for service in services %}
                 <li><a href="/services/{{ service.slug }}">{{ service.name }}</a> — {{ service.summary }}</li>
                 {% endfor %}
             </ul>
             <p class="mt-2">Also companionship, hospice and respite care, bathing and grooming, lifting and transferring, meal preparation and feeding, laundry and linen change, medication reminders, errands, and light housekeeping.</p>
+            <a class="card-link" href="/services">View all services &rarr;</a>
         </div>
         <div class="service-group">
+            <span class="eyebrow">Short-term support</span>
             <h3>Care programs</h3>
-            <p>Family caregiver relief and respite · Aging-in-place support · After-discharge home support. <a href="/care#request-care">Ask about the right starting point</a>.</p>
+            <p>Family caregiver relief and respite, aging-in-place support, and after-discharge home support.</p>
+            <ul class="service-index">
+                <li><a href="/care-programs">Respite and caregiver relief</a></li>
+                <li><a href="/services/post-hospital-support">After-discharge home support</a></li>
+                <li><a href="/family-guide">Family caregiver guide</a></li>
+            </ul>
+            <a class="card-link" href="/care#request-care">Ask about the right starting point &rarr;</a>
         </div>
     </div>
 </section>
@@ -71,22 +104,52 @@
     </div>
 </section>
 
+<section class="start-band" aria-labelledby="startHeading">
+    <div class="section-heading">
+        <span class="eyebrow">How to get started</span>
+        <h2 id="startHeading">Four ways to begin care with Ables.</h2>
+        <p>Whatever brings you here, we make the first step simple and the office line is open.</p>
+    </div>
+    <div class="start-grid">
+        <div class="start-item">
+            <h3>Insurance &amp; payment</h3>
+            <p>We accept Community First Choice (CFC) and HCBOW, CPAS, private pay, and long-term care insurance. Unsure? Choose "Let's Talk!" on the request form.</p>
+            <a href="/pricing-payment">Pricing &amp; payment &rarr;</a>
+        </div>
+        <div class="start-item">
+            <h3>Send a referral</h3>
+            <p>Families, agencies, and providers can refer a client directly. We review every referral and follow up within one business day.</p>
+            <a href="/referrals">Send a referral &rarr;</a>
+        </div>
+        <div class="start-item">
+            <h3>Care in your home</h3>
+            <p>Skilled and non-skilled support, from a few hours a day through 24-hour live-in care, scheduled around your routine.</p>
+            <a href="/services">View all services &rarr;</a>
+        </div>
+        <div class="start-item">
+            <h3>Talk with our office</h3>
+            <p>Call 301-326-2225 and we will walk you through availability, costs, and next steps for your exact address.</p>
+            <a href="/contact">Contact us &rarr;</a>
+        </div>
+    </div>
+</section>
+
 <section class="home-image-story" aria-label="Care at home">
     <div class="home-image-grid">
         <figure>
-            <img src="{{ url_for('static', filename='img/care/hero-family-room-v2.png') }}" alt="Caregiver speaking with a client and family member at home" loading="lazy" decoding="async">
+            <img src="{{ url_for('static', filename='img/care/hero-family-room-1280.jpg') }}" alt="Caregiver speaking with a client and family member at home" loading="lazy" decoding="async">
             <figcaption>Family conversation</figcaption>
         </figure>
         <figure>
-            <img src="{{ url_for('static', filename='img/care/hero-consultation-v2.png') }}" alt="Home care consultation at a kitchen table" loading="lazy" decoding="async">
+            <img src="{{ url_for('static', filename='img/care/hero-consultation-v2.jpg') }}" alt="Home care consultation at a kitchen table" loading="lazy" decoding="async" width="1200" height="675">
             <figcaption>Free consultation</figcaption>
         </figure>
         <figure>
-            <img src="{{ url_for('static', filename='img/care/hero-care-standards-v2.png') }}" alt="Caregiver assisting an older adult safely at home" loading="lazy" decoding="async">
+            <img src="{{ url_for('static', filename='img/care/hero-care-standards-v2.jpg') }}" alt="Caregiver assisting an older adult safely at home" loading="lazy" decoding="async" width="1200" height="675">
             <figcaption>Respectful support</figcaption>
         </figure>
         <figure>
-            <img src="{{ url_for('static', filename='img/care/home-services-v2.png') }}" alt="Caregiver reviewing daily routine notes with a client" loading="lazy" decoding="async">
+            <img src="{{ url_for('static', filename='img/care/home-services-v2.jpg') }}" alt="Caregiver reviewing daily routine notes with a client" loading="lazy" decoding="async" width="1200" height="675">
             <figcaption>Care plan notes</figcaption>
         </figure>
     </div>
@@ -99,11 +162,11 @@
         <p>Select a postcard to open a larger, readable copy in a new tab. The printed artwork is preserved as-is.</p>
     </div>
     <div class="postcard-grid">
-        <a class="postcard-frame" href="{{ url_for('static', filename='img/brand/postcard-front-print.jpg') }}" target="_blank" rel="noopener" aria-label="Open larger copy of Ables Home Healthcare postcard, front">
+        <a class="postcard-frame" href="{{ url_for('static', filename='img/brand/postcard-front-corrected.jpg') }}" target="_blank" rel="noopener" aria-label="Open larger copy of Ables Home Healthcare postcard, front">
             <img src="{{ url_for('static', filename='img/brand/postcard-front-corrected.jpg') }}" alt="Ables Home Healthcare postcard, front: services, skilled and non-skilled nursing care" loading="lazy" decoding="async">
             <span>Front · open larger copy</span>
         </a>
-        <a class="postcard-frame" href="{{ url_for('static', filename='img/brand/postcard-back-print.jpg') }}" target="_blank" rel="noopener" aria-label="Open larger copy of Ables Home Healthcare postcard, back">
+        <a class="postcard-frame" href="{{ url_for('static', filename='img/brand/postcard-back-corrected.jpg') }}" target="_blank" rel="noopener" aria-label="Open larger copy of Ables Home Healthcare postcard, back">
             <img src="{{ url_for('static', filename='img/brand/postcard-back-corrected.jpg') }}" alt="Ables Home Healthcare postcard, back: service areas and contact information" loading="lazy" decoding="async">
             <span>Back · open larger copy</span>
         </a>
@@ -127,7 +190,10 @@
         </div>
         <div class="fact">
             <h3>Service areas</h3>
-            <p>{{ service_areas|join(', ') }}. Call to confirm availability for your exact address.</p>
+            <p>
+                {% for area in service_areas %}{% if area == "Montgomery County" %}<strong class="area-highlight">{{ area }}</strong>{% else %}{{ area }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
+                Call to confirm availability for your exact address.
+            </p>
         </div>
     </div>
 </section>
@@ -137,7 +203,7 @@
         <div class="col-lg-8">
             <span class="eyebrow">Next step</span>
             <h2>Start with a free consultation.</h2>
-            <p>Call <a href="tel:+13014553030">301-455-3030</a>, send a referral, or complete the care request form. Not for emergencies — call 911.</p>
+            <p>Call <a href="tel:+13013262225">301-326-2225</a>, send a referral, or complete the care request form. Not for emergencies — call 911.</p>
             <p class="mb-0">RSA · Licensed by Maryland Department of Health · R3114.</p>
         </div>
         <div class="col-lg-4 text-lg-end">

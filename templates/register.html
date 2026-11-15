@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 
+{% block title %}Create Your Client Portal Account | Ables Home Healthcare{% endblock %}
+{% block extra_head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+
 {% block content %}
 <div class="page-hero simple-hero">
     <span class="eyebrow">Secure registration</span>
@@ -11,12 +14,12 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row g-3">
         <div class="col-md-6">
-            <label class="form-label">Full Name</label>
-            <input name="name" class="form-control" required autocomplete="name">
+            <label class="form-label" for="registerName">Full Name</label>
+            <input id="registerName" name="name" class="form-control" required autocomplete="name">
         </div>
         <div class="col-md-6">
-            <label class="form-label">Email</label>
-            <input name="email" type="email" class="form-control" required autocomplete="email">
+            <label class="form-label" for="registerEmail">Email</label>
+            <input id="registerEmail" name="email" type="email" class="form-control" required autocomplete="email">
         </div>
         <div class="col-md-6">
             {% set password_id = "registerPassword" %}

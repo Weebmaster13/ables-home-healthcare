@@ -12,6 +12,9 @@ class User(db.Model, UserMixin):
     password = db.Column(db.String(200), nullable=False)
 
     role = db.Column(db.String(20), default="client")
+    # Monotonic counter bumped when a password reset is consumed, so a
+    # reset token can only be used once even under concurrent replay.
+    reset_token_version = db.Column(db.Integer, default=0, nullable=False)
     phone = db.Column(db.String(50))
     address = db.Column(db.String(200))
     emergency_contact_name = db.Column(db.String(120))
@@ -300,3 +303,28 @@ def load_user(user_id):
     return user
 
 
+
+
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+@event.listens_for(Session, "before_flush")
+def _truncate_string_values(session, flush_context, instances):
+    """Avoid hard database errors when a user submits an over-long field."""
+    for obj in list(session.new) + list(session.dirty):
+        mapper = getattr(obj, "__mapper__", None)
+        if mapper is None:
+            continue
+        for prop in mapper.iterate_properties:
+            columns = getattr(prop, "columns", None)
+            if not columns:
+                continue
+            max_len = getattr(columns[0].type, "length", None)
+            if not max_len:
+                continue
+            try:
+                value = getattr(obj, prop.key)
+            except Exception:
+                continue
+            if isinstance(value, str) and len(value) > max_len:
+                setattr(obj, prop.key, value[:max_len])

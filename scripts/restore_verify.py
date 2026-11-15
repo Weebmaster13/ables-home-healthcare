@@ -81,9 +81,16 @@ def main(argv=None):
     manifest_path, target = Path(args[0]), Path(args[args.index("--dir") + 1])
     checklist = None
     if "--checklist" in args:
-        checklist = json.loads(
-            Path(args[args.index("--checklist") + 1]).read_text(
-                encoding="utf-8"))
+        try:
+            checklist = json.loads(
+                Path(args[args.index("--checklist") + 1]).read_text(
+                    encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            print(f"FAIL checklist unreadable: {type(exc).__name__}")
+            return 1
+        if not isinstance(checklist.get("database"), dict):
+            print("FAIL checklist has no database section (wrong file?)")
+            return 1
     db_url = args[args.index("--db") + 1] if "--db" in args else None
 
     if not manifest_path.is_file():

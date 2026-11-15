@@ -14,7 +14,7 @@ from sqlalchemy import or_, text
 from extensions import db
 from models import AdminNote, AdminRecoveryCode, Appointment, AuditLog, CarePlan, CaregiverApplication, CaregiverAvailability, CaregiverOnboardingItem, ClientDocument, Inquiry, NotificationLog, PortalMessage, Referral, User
 from notifications import send_admin_notification, send_email_notification, send_sms_notification
-from security import audit, generate_recovery_codes, password_feedback, password_is_strong, public_form_is_limited, record_public_form, require_permission, require_role, safe_redirect_url, scan_upload_stream
+from security import audit, generate_recovery_codes, password_feedback, password_is_strong, public_form_is_limited, recent_duplicate_inquiry, recent_duplicate_referral, record_public_form, require_permission, require_role, safe_redirect_url, scan_upload_stream, session_password_stamp
 from backup_db import BACKUP_DIR, cleanup_old_backups, create_backup
 
 # ---------------- MAIN BLUEPRINT ----------------
@@ -157,11 +157,19 @@ def save_private_upload(file_storage, folder, owner_prefix, allowed_checker):
     return stored_name, original_filename
 
 
+def _csv_safe_cell(value):
+    """Neutralize spreadsheet formula injection in exported user data."""
+    text = "" if value is None else str(value)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + text
+    return text
+
+
 def csv_response(filename, headers, rows):
     buffer = StringIO()
     writer = csv.writer(buffer)
     writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerows([[_csv_safe_cell(cell) for cell in row] for row in rows])
     response = make_response(buffer.getvalue())
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
@@ -442,6 +450,7 @@ SERVICES = [
 ]
 
 SERVICE_AREAS = [
+    "Montgomery County",
     "Anne Arundel",
     "Baltimore",
     "Calvert",
@@ -452,7 +461,6 @@ SERVICE_AREAS = [
     "Harford",
     "Howard",
     "Kent",
-    "Montgomery County",
     "Prince Georges",
     "Queen Anne's",
     "St. Mary's",
@@ -486,6 +494,8 @@ PUBLIC_STATIC_ROUTES = [
     "main.faq",
     "main.privacy",
     "main.terms",
+    "main.brochure",
+    "main.why_choose_us",
 ]
 
 TRUST_POINTS = [
@@ -507,23 +517,11 @@ TRUST_POINTS = [
     },
 ]
 
-TESTIMONIALS = [
-    {
-        "quote": "This home healthcare group has been a godsend. Ables Homecare has quality staff who can provide assistance, respect, flexibility, and calming reassurance when families need help at home.",
-        "name": "Carole C.",
-        "context": "Maryland family",
-    },
-    {
-        "quote": "Having help with daily routines gave our loved one more confidence at home.",
-        "name": "Client family",
-        "context": "Montgomery County",
-    },
-    {
-        "quote": "The scheduling process made it easier to know what visits were requested and what came next.",
-        "name": "Referral partner",
-        "context": "Community care provider",
-    },
-]
+TESTIMONIALS = []
+# Family quotes removed pending documented permission from each quoted
+# party. Restore entries here only after permission (and exact wording)
+# is confirmed; the templates below render nothing while the list is
+# empty so no unattributed endorsements can appear.
 
 CARE_PROGRAMS = [
     {
@@ -735,7 +733,7 @@ HERO_SLIDES = [
         "theme": "hero-local-support",
         "image": "img/care/home-services-v2.png",
         "eyebrow": "Flexible local support",
-        "title": "Call us at 301-455-3030.",
+        "title": "Call us at 301-326-2225.",
         "body": "Fax: 301-326-2270. Email: admin@ableshomehealthcare.com.",
     },
 ]
@@ -800,7 +798,7 @@ LOCAL_SEO_PAGES = [
         "city": "Maryland",
         "service": "home care",
         "body": "Ables Home Healthcare serves approved Maryland counties and Baltimore City with skilled and non-skilled nursing care support.",
-        "local_detail": "Call 301-455-3030 to confirm availability for the client's exact address, schedule, and care needs.",
+        "local_detail": "Call 301-326-2225 to confirm availability for the client's exact address, schedule, and care needs.",
     },
     {
         "slug": "personal-care-montgomery-county-md",
@@ -962,10 +960,16 @@ def robots_txt():
         "User-agent: *",
         "Allow: /",
         "Disallow: /admin/",
+        "Disallow: /auth/",
         "Disallow: /caregiver/",
         "Disallow: /dashboard",
         "Disallow: /profile",
         "Disallow: /request-care",
+        "Disallow: /messages",
+        "Disallow: /documents",
+        "Disallow: /my-appointments",
+        "Disallow: /healthz",
+        "Disallow: /launch-readiness",
         f"Sitemap: {build_absolute_url('/sitemap.xml')}",
         "",
     ])
@@ -987,8 +991,8 @@ def sitemap_xml():
         for path in public_sitemap_urls()
     ])
     content = (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n"
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f"{url_entries}\n"
         "</urlset>\n"
     )
@@ -1084,6 +1088,8 @@ def create_consultation_inquiry(reason="Scheduled consultation"):
             f"Notes: {request.form.get('message', '').strip()}",
         ]),
     )
+    if recent_duplicate_inquiry(inquiry.email, inquiry.message):
+        return inquiry
     db.session.add(inquiry)
     db.session.commit()
     send_admin_notification(
@@ -1097,6 +1103,10 @@ def create_consultation_inquiry(reason="Scheduled consultation"):
 @main_bp.route("/free-consultation", methods=["GET", "POST"])
 def free_consultation():
     if request.method == "POST":
+        if public_form_is_limited():
+            flash("Too many requests sent recently. Please wait a little while.", "danger")
+            return redirect(url_for("main.contact"))
+        record_public_form()
         create_consultation_inquiry("Free consultation")
         return redirect(url_for("main.thank_you", reason="consultation"))
 
@@ -1112,6 +1122,10 @@ def free_consultation():
 @main_bp.route("/schedule-consultation", methods=["GET", "POST"])
 def schedule_consultation():
     if request.method == "POST":
+        if public_form_is_limited():
+            flash("Too many requests sent recently. Please wait a little while.", "danger")
+            return redirect(url_for("main.contact"))
+        record_public_form()
         create_consultation_inquiry("Scheduled consultation")
         flash("Your consultation request was sent. Staff will follow up as soon as possible.", "success")
         return redirect(url_for("main.thank_you", reason="consultation"))
@@ -1141,6 +1155,10 @@ def quick_message():
     if not inquiry.message:
         flash("Please enter a message before sending.", "danger")
         return redirect(safe_redirect_url(request.referrer, url_for("main.contact")))
+
+    if recent_duplicate_inquiry(inquiry.email, inquiry.message):
+        flash("Your quick message was sent. Staff will respond as soon as possible.", "success")
+        return redirect(safe_redirect_url(request.referrer, url_for("main.thank_you", reason="message")))
 
     db.session.add(inquiry)
     db.session.commit()
@@ -1202,7 +1220,9 @@ def resources():
 
 
 @main_bp.route("/launch-readiness")
+@login_required
 def launch_readiness():
+    require_role("admin")
     return render_template(
         "launch_readiness.html",
         readiness_items=READINESS_ITEMS,
@@ -1342,7 +1362,7 @@ def seo_checklist_items():
         {
             "label": "Directory Listing Readiness",
             "ready": current_app.config.get("SITE_BASE_URL", "").startswith("https://"),
-            "detail": "NAP details are consistent: Ables Home Healthcare, 301-455-3030, 11510 Georgia Avenue Suite 230 Silver Spring MD 20902.",
+            "detail": "NAP details are consistent: Ables Home Healthcare, 301-326-2225, 11510 Georgia Avenue Suite 230 Silver Spring MD 20902.",
             "href": url_for("main.contact"),
         },
     ]
@@ -1402,6 +1422,10 @@ def referrals():
             follow_up=request.form.get("follow_up", "").strip(),
             notes=request.form.get("notes", "").strip(),
         )
+
+        if recent_duplicate_referral(referral.referral_source,
+                                     referral.client_name, referral.notes):
+            return redirect(url_for("main.thank_you", reason="referral"))
 
         db.session.add(referral)
         db.session.commit()
@@ -1470,6 +1494,9 @@ def contact():
             message=request.form.get("message", "").strip(),
         )
 
+        if recent_duplicate_inquiry(inquiry.email, inquiry.message):
+            return redirect(url_for("main.thank_you", reason="contact"))
+
         db.session.add(inquiry)
         db.session.commit()
 
@@ -1499,6 +1526,10 @@ def thank_you():
 @main_bp.route("/employment-application", methods=["GET", "POST"])
 def employment_application():
     if request.method == "POST":
+        if public_form_is_limited():
+            flash("Too many applications sent recently. Please wait a little while.", "danger")
+            return redirect(url_for("main.contact"))
+        record_public_form()
         credential_type = request.form.get("credential_type", "").strip().upper()
         if credential_type not in {"CNA", "LPN", "RN"}:
             send_admin_notification(
@@ -1512,7 +1543,7 @@ def employment_application():
                 ]),
                 reply_to=request.form.get("email", "").strip(),
             )
-            flash("This application is for CNA, LPN, and RN caregivers right now. Please call the office at 301-455-3030.", "warning")
+            flash("This application is for CNA, LPN, and RN caregivers right now. Please call the office at 301-326-2225.", "warning")
             return render_template("employment_application.html", blocked_application=True)
 
         resume_filename = save_application_upload(request.files.get("resume"))
@@ -1609,7 +1640,7 @@ def download_referral_form():
         "Notes:",
         "",
         "Submit to: admin@ableshomehealthcare.com",
-        "Phone: (301) 455-3030",
+        "Phone: (301) 326-2225",
     ])
     response = make_response(content)
     response.headers["Content-Type"] = "text/plain"
@@ -1622,6 +1653,31 @@ def faq():
     return render_template("faq.html")
 
 
+# Brand icons browsers request by default at the site root. Served from
+# the static brand assets with explicit MIME types so the tab icon,
+# bookmarks, and iOS home-screen icons resolve even where <link> tags
+# are ignored or cached. One-day cache: long enough to be efficient,
+# short enough that a future logo refresh propagates.
+@main_bp.route("/favicon.ico")
+def favicon_ico():
+    return send_from_directory(
+        Path(current_app.static_folder) / "img",
+        "favicon.ico",
+        mimetype="image/x-icon",
+        max_age=86400,
+    )
+
+
+@main_bp.route("/apple-touch-icon.png")
+def apple_touch_icon():
+    return send_from_directory(
+        Path(current_app.static_folder) / "img",
+        "apple-touch-icon.png",
+        mimetype="image/png",
+        max_age=86400,
+    )
+
+
 @main_bp.route("/privacy")
 def privacy():
     return render_template("privacy.html")
@@ -1632,8 +1688,106 @@ def terms():
     return render_template("terms.html")
 
 
+def database_backend_name(database_uri):
+    """Classify a SQLAlchemy URL into a coarse backend name."""
+    uri = str(database_uri or "")
+    if uri.startswith("postgresql"):
+        return "postgresql"
+    if uri.startswith("sqlite"):
+        return "sqlite"
+    if uri.startswith(("mysql", "mariadb")):
+        return "mysql"
+    return "other"
+
+
+def _core_health_checks():
+    checks = {}
+    checks["database_backend"] = database_backend_name(
+        current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    )
+    try:
+        db.session.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        current_app.logger.exception("Health check database failure")
+        checks["database"] = "error"
+
+    try:
+        # Inspect table names via SQLAlchemy so identifier quoting is correct
+        # on every backend (PostgreSQL, MySQL/MariaDB, SQLite).
+        from sqlalchemy import inspect
+
+        tables = set(inspect(db.engine).get_table_names())
+        required = {"user", "inquiry", "caregiver_application", "notification_log"}
+        checks["database_schema"] = "ok" if required.issubset(tables) else "error"
+    except Exception:
+        current_app.logger.exception("Health check database schema failure")
+        checks["database_schema"] = "error"
+
+    upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
+    try:
+        upload_folder.mkdir(parents=True, exist_ok=True)
+        probe = upload_folder / ".healthz"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        checks["uploads"] = "ok"
+    except Exception:
+        current_app.logger.exception("Health check upload folder failure")
+        checks["uploads"] = "error"
+    return checks
+
+
+def health_detail_checks():
+    """Extended health checks consumed by the launch checklist page."""
+    checks = _core_health_checks()
+    checks["site_base_url"] = (
+        "ok" if current_app.config["SITE_BASE_URL"].startswith("https://")
+        or current_app.config["SITE_BASE_URL"].startswith("http://127.0.0.1")
+        else "warning"
+    )
+    mail_keys = {
+        "MAIL_SERVER": current_app.config.get("MAIL_SERVER"),
+        "MAIL_USERNAME": current_app.config.get("MAIL_USERNAME"),
+        "MAIL_PASSWORD": current_app.config.get("MAIL_PASSWORD"),
+    }
+    checks["smtp"] = "ok" if all(mail_keys.values()) else "not_configured"
+    checks["smtp_keys"] = {
+        key: "present" if value else "missing"
+        for key, value in mail_keys.items()
+    }
+    try:
+        checks["email_delivery"] = {
+            "sent": NotificationLog.query.filter_by(channel="email", status="sent").count(),
+            "failed": NotificationLog.query.filter_by(channel="email", status="failed").count(),
+            "skipped": NotificationLog.query.filter_by(channel="email", status="skipped").count(),
+            "latest_error": "",
+            "latest_recipient": "",
+            "latest_status": "none",
+        }
+    except Exception as exc:
+        checks["email_delivery"] = {"error": str(exc)[:200]}
+    checks["production_mode"] = (
+        "ok" if current_app.config.get("SESSION_COOKIE_SECURE") else "development"
+    )
+    return checks
+
+
 @main_bp.route("/healthz")
 def healthz():
+    # Public callers get a minimal liveness/DB signal. Full configuration
+    # and email diagnostics are only returned to loopback or an admin.
+    detailed = request.remote_addr in {"127.0.0.1", "::1"} or (
+        current_user.is_authenticated and current_user.role == "admin"
+    )
+    if not detailed:
+        try:
+            db.session.execute(text("SELECT 1"))
+            return jsonify({"status": "ok"}), 200
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Health check database failure")
+            return jsonify({"status": "error"}), 503
+
     checks = {}
     database_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
     checks["database_backend"] = "postgresql" if database_uri.startswith("postgresql") else "sqlite" if database_uri.startswith("sqlite") else "other"
@@ -1699,7 +1853,10 @@ def healthz():
     checks["production_mode"] = "ok" if current_app.config.get("SESSION_COOKIE_SECURE") else "development"
 
     ok = checks["database"] == "ok" and checks["database_schema"] == "ok" and checks["uploads"] == "ok"
-    return jsonify({"status": "ok" if ok else "error", "checks": checks}), 200 if ok else 503
+    status = "ok" if ok else "error"
+    if ok and checks.get("smtp") != "ok":
+        status = "degraded"
+    return jsonify({"status": status, "checks": checks}), 200 if ok else 503
 
 
 def health_status_data():
@@ -1750,6 +1907,13 @@ def dashboard():
         recent_inquiries = Inquiry.query.order_by(Inquiry.created_at.desc()).limit(5).all()
         recent_applications = CaregiverApplication.query.order_by(CaregiverApplication.created_at.desc()).limit(5).all()
         recent_users = User.query.order_by(User.created_at.desc()).limit(6).all()
+        email_sent = NotificationLog.query.filter_by(channel="email", status="sent").count()
+        email_failed = NotificationLog.query.filter_by(channel="email", status="failed").count()
+        last_email = (
+            NotificationLog.query.filter_by(channel="email")
+            .order_by(NotificationLog.created_at.desc())
+            .first()
+        )
         return render_template(
             "admin/dashboard.html",
             user=current_user,
@@ -1758,6 +1922,9 @@ def dashboard():
             recent_applications=recent_applications,
             recent_users=recent_users,
             email_ready=email_ready,
+            email_sent=email_sent,
+            email_failed=email_failed,
+            last_email=last_email,
             readiness_items=READINESS_ITEMS,
         )
 
@@ -2249,7 +2416,7 @@ def admin_system_status():
 @login_required
 def admin_launch_checklist():
     require_permission("admin:reports")
-    health = health_status_data()
+    health = health_detail_checks()
     BACKUP_DIR.mkdir(exist_ok=True)
     backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
     test_inquiries = Inquiry.query.filter(
@@ -2768,6 +2935,78 @@ def admin_download_backup(filename):
     return send_from_directory(BACKUP_DIR, safe_name, as_attachment=True)
 
 
+def _send_admin_reset_email(account):
+    """Email a password reset link to an administrator and report delivery."""
+    from itsdangerous import URLSafeTimedSerializer
+
+    serializer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+    token = serializer.dumps(
+        {
+            "e": account.email,
+            "c": session_password_stamp(account),
+            "v": getattr(account, "reset_token_version", 0) or 0,
+        },
+        salt="password-reset",
+    )
+    reset_url = current_app.config.get("SITE_BASE_URL", "").rstrip("/") + url_for(
+        "auth.reset_password", token=token)
+    body = (
+        "Hello %s,\n\n"
+        "A password reset was requested for your Ables Home Healthcare account.\n\n"
+        "Reset your password here: %s\n\n"
+        "This link expires in 1 hour. If you did not request it, ignore this email."
+        % (account.name, reset_url)
+    )
+    sent = send_email_notification(
+        account.email,
+        "Reset your Ables Home Healthcare password",
+        body,
+        related_type="User",
+        related_id=account.id,
+    )
+    if sent:
+        flash("Password reset link emailed to %s. It is valid for one hour." % account.email, "success")
+    else:
+        flash(
+            "We could not send the reset email to %s. Ask the office to reset it for you, "
+            "or try again once SMTP is configured." % account.email,
+            "danger",
+        )
+    return redirect(url_for("main.admin_account"))
+
+
+@main_bp.route("/admin/account")
+@login_required
+def admin_account():
+    """Let an administrator change the address they sign in with (for example
+    to a personal Gmail) without needing anyone else to touch the server."""
+    require_role("admin")
+
+    if request.method == "POST":
+        if request.form.get("action") == "send_reset":
+            return _send_admin_reset_email(current_user)
+        new_email = request.form.get("email", "").strip().lower()
+        if not new_email or "@" not in new_email or "." not in new_email.split("@")[-1]:
+            flash("Enter a valid email address.", "danger")
+            return redirect(url_for("main.admin_account"))
+        if new_email != current_user.email:
+            clash = User.query.filter(User.email == new_email, User.id != current_user.id).first()
+            if clash:
+                flash("That email address is already used by another account.", "danger")
+                return redirect(url_for("main.admin_account"))
+            previous = current_user.email
+            current_user.email = new_email
+            audit("change_admin_email", "User", current_user.id, "Sign-in email changed")
+            db.session.commit()
+            flash("Your sign-in email is now %s. Use it to sign in from now on." % new_email, "success")
+            current_app.logger.info("Admin sign-in email changed from %s to %s", previous, new_email)
+        else:
+            flash("That is already your sign-in email.", "info")
+        return redirect(url_for("main.admin_account"))
+
+    return render_template("admin/account.html", user=current_user)
+
+
 @main_bp.route("/admin/users")
 @login_required
 def admin_users():
@@ -3153,11 +3392,25 @@ def admin_edit_user(user_id):
     account = get_record_or_404(User, user_id)
 
     if request.method == "POST":
+        new_email = request.form.get("email", "").strip().lower()
+        if not new_email:
+            flash("An email address is required.", "danger")
+            return redirect(url_for("main.admin_edit_user", user_id=account.id))
+        duplicate = User.query.filter(User.email == new_email, User.id != account.id).first()
+        if duplicate:
+            flash("That email address is already used by another account.", "danger")
+            return redirect(url_for("main.admin_edit_user", user_id=account.id))
+
+        new_role = request.form.get("role", account.role)
+        if new_role not in {"admin", "caregiver", "client"}:
+            flash("Choose a valid role.", "danger")
+            return redirect(url_for("main.admin_edit_user", user_id=account.id))
+
         account.name = request.form.get("name", "").strip()
-        account.email = request.form.get("email", "").strip().lower()
+        account.email = new_email
         account.phone = request.form.get("phone", "").strip()
         account.address = request.form.get("address", "").strip()
-        account.role = request.form.get("role", account.role)
+        account.role = new_role
         account.emergency_contact_name = request.form.get("emergency_contact_name", "").strip()
         account.emergency_contact_phone = request.form.get("emergency_contact_phone", "").strip()
         account.care_needs = request.form.get("care_needs", "").strip()
@@ -3233,7 +3486,39 @@ def admin_delete_user(user_id):
         flash("You cannot delete your own admin account.", "danger")
         return redirect(url_for("main.admin_users"))
 
-    audit("delete_user", "User", account.id, f"Deleted {account.email}")
+    account_id = account.id
+    # Nullable references can simply be detached.
+    PortalMessage.query.filter_by(replied_by_id=account_id).update(
+        {PortalMessage.replied_by_id: None}, synchronize_session=False
+    )
+    ClientDocument.query.filter_by(archived_by_id=account_id).update(
+        {ClientDocument.archived_by_id: None}, synchronize_session=False
+    )
+    AuditLog.query.filter_by(user_id=account_id).update(
+        {AuditLog.user_id: None}, synchronize_session=False
+    )
+    Appointment.query.filter_by(client_id=account_id).update(
+        {Appointment.client_id: None}, synchronize_session=False
+    )
+    Appointment.query.filter_by(caregiver_id=account_id).update(
+        {Appointment.caregiver_id: None}, synchronize_session=False
+    )
+    # Rows wholly owned by this account are removed.
+    PortalMessage.query.filter_by(sender_id=account_id).delete(synchronize_session=False)
+    ClientDocument.query.filter_by(owner_id=account_id).delete(synchronize_session=False)
+    AdminNote.query.filter_by(subject_user_id=account_id).delete(synchronize_session=False)
+    CaregiverAvailability.query.filter_by(caregiver_id=account_id).delete(synchronize_session=False)
+    CaregiverOnboardingItem.query.filter_by(caregiver_id=account_id).delete(synchronize_session=False)
+    AdminRecoveryCode.query.filter_by(admin_id=account_id).delete(synchronize_session=False)
+    # Rows authored by this account but needed by others are reassigned.
+    ClientDocument.query.filter_by(uploaded_by_id=account_id).update(
+        {ClientDocument.uploaded_by_id: current_user.id}, synchronize_session=False
+    )
+    AdminNote.query.filter_by(admin_id=account_id).update(
+        {AdminNote.admin_id: current_user.id}, synchronize_session=False
+    )
+
+    audit("delete_user", "User", account_id, f"Deleted {account.email}")
     db.session.delete(account)
     db.session.commit()
 
@@ -3712,10 +3997,19 @@ def assign_caregiver(appointment_id):
         flash("Please create or select a caregiver before assigning this appointment.", "danger")
         return redirect(url_for("main.admin_appointments"))
 
-    caregiver_id = int(caregiver_id)
+    try:
+        caregiver_id = int(caregiver_id)
+    except (TypeError, ValueError):
+        flash("That caregiver selection was not valid. Please try again.", "danger")
+        return redirect(url_for("main.admin_appointments"))
+
+    caregiver = db.session.get(User, caregiver_id)
+    if not caregiver or caregiver.role != "caregiver":
+        flash("That caregiver account could not be found.", "danger")
+        return redirect(url_for("main.admin_appointments"))
+
     conflicts = caregiver_assignment_conflicts(appointment, caregiver_id)
     if conflicts and request.form.get("override_conflict") != "yes":
-        caregiver = db.session.get(User, caregiver_id)
         flash(
             f"{caregiver.name if caregiver else 'Caregiver'} already has a visit at this date and time. Check Override conflict to assign anyway.",
             "danger",

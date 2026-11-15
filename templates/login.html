@@ -1,16 +1,46 @@
 {% extends "base.html" %}
 
+{% block title %}Login | Ables Home Healthcare{% endblock %}
+{% block extra_head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+
 {% block content %}
-<h2>Login</h2>
+<div class="auth-shell">
+    <div class="auth-card">
+        <span class="eyebrow">Client &amp; caregiver portal</span>
+        <h1 class="h3">Sign in</h1>
+        <p class="auth-intro">Use the email address you registered with. If you have forgotten your
+            password, request a reset link and we will email it to you.</p>
 
-<form method="POST">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input name="email" class="form-control mb-2" placeholder="Email">
-    <input name="password" type="password" class="form-control mb-2" placeholder="Password">
-    <input name="recovery_code" class="form-control mb-2" placeholder="Admin recovery code, if enabled" autocomplete="one-time-code">
-    <button class="btn btn-primary">Login</button>
-    <a class="btn btn-link" href="/auth/forgot-password">Forgot password?</a>
-</form>
+        <form method="POST" class="contact-form" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label class="form-label" for="loginEmail">Email address</label>
+                <input id="loginEmail" name="email" type="email" class="form-control"
+                       placeholder="you@example.com" autocomplete="username" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="loginPassword">Password</label>
+                <input id="loginPassword" name="password" type="password" class="form-control"
+                       placeholder="Your password" autocomplete="current-password" required>
+            </div>
+
+            <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+
+            <p class="auth-help">
+                <a href="/auth/forgot-password">Forgot your password?</a>
+                <span class="text-muted"> &middot; </span>
+                <a href="/auth/register">Create a client account</a>
+            </p>
+        </form>
+    </div>
+
+    <aside class="auth-aside">
+        <h2 class="h5">Need care?</h2>
+        <p>Speak with the office about home care in Montgomery County and surrounding areas.</p>
+        <p class="mb-2"><a class="header-phone d-inline-block" href="tel:+13013262225">301-326-2225</a></p>
+        <a class="btn btn-primary btn-client" href="/care#request-care">Become a Client</a>
+    </aside>
+</div>
 {% endblock %}
-
-

@@ -34,7 +34,21 @@ def verify(manifest, base_dir):
     base = Path(base_dir)
     results = []
     for entry in manifest.get("files", []):
-        target = base / entry["path"]
+        # A manifest is owner-supplied input: validate shape first, then
+        # confine every entry inside base_dir. Absolute paths and ".."
+        # components are rejected even though verification only reads —
+        # a crafted manifest must not probe files outside the copy.
+        rel = entry.get("path") if isinstance(entry, dict) else None
+        if (not rel or not isinstance(rel, str)
+                or not isinstance(entry.get("bytes"), int)
+                or not isinstance(entry.get("sha256"), str)):
+            results.append(("FAIL", f"MALFORMED manifest entry: "
+                                    f"{str(entry)[:60]}"))
+            continue
+        if Path(rel).is_absolute() or ".." in Path(rel).parts:
+            results.append(("FAIL", f"UNSAFE path rejected: {rel[:60]}"))
+            continue
+        target = base / rel
         if not target.is_file():
             results.append(("FAIL", f"MISSING {entry['path']}"))
             continue

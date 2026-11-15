@@ -1,16 +1,13 @@
 {% extends "base.html" %}
 
+{% block title %}Admin dashboard | Ables Home Healthcare{% endblock %}
+
 {% block content %}
 
 <div class="page-hero simple-hero">
     <span class="eyebrow">Admin dashboard</span>
     <h1>Admin dashboard</h1>
-    <p class="lead">Welcome Admin</p>
-    <p>Monitor users, non-medical care requests, appointments, inquiries, and referrals.</p>
-    <form method="POST" action="/auth/logout" class="mt-3">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-outline-primary">Log Out</button>
-    </form>
+    <p>Monitor users, care requests, appointments, inquiries, and referrals for Montgomery County and surrounding areas.</p>
 </div>
 
 <section class="dashboard-stats">
@@ -38,19 +35,91 @@
     </form>
 </section>
 
-<section class="readiness-strip mt-4">
-    <div>
-        <span class="eyebrow">Production status</span>
-        <h2>Email delivery is {% if email_ready %}configured{% else %}not configured yet{% endif %}.</h2>
-        <p>
-            {% if email_ready %}
-            Website forms can send admin notifications using the configured SMTP settings.
-            {% else %}
-            Forms still save to the database, but ADMIN_EMAIL/SMTP settings must be configured before launch.
-            {% endif %}
-        </p>
+<section class="row g-4 mt-2">
+    <div class="col-lg-8">
+        <div class="content-card h-100">
+            <h2 class="h4">Quick actions</h2>
+            <p class="text-muted">Everything grouped by what you are doing.</p>
+
+            <div class="admin-action-groups">
+                <section class="admin-action-group">
+                    <h3>Care operations</h3>
+                    <ul>
+                        <li><a href="/admin/appointments">Manage appointments</a></li>
+                        <li><a href="/admin/schedule">Schedule board</a></li>
+                        <li><a href="/admin/work-queue">Work queue</a></li>
+                        <li><a href="/admin/care-plans">Care plans</a></li>
+                        <li><a href="/admin/caregiver-conflicts">Caregiver conflicts</a></li>
+                    </ul>
+                </section>
+
+                <section class="admin-action-group">
+                    <h3>People</h3>
+                    <ul>
+                        <li><a href="/admin/users">Manage users</a></li>
+                        <li><a href="/admin/users/create">Add user or caregiver</a></li>
+                        <li><a href="/admin/applications">Caregiver applications</a></li>
+                        <li><a href="/admin/messages">Portal messages</a></li>
+                    </ul>
+                </section>
+
+                <section class="admin-action-group">
+                    <h3>Leads &amp; content</h3>
+                    <ul>
+                        <li><a href="/admin/inquiries">View inquiries</a></li>
+                        <li><a href="/admin/reports">Reports &amp; exports</a></li>
+                        <li><a href="/admin/search">Global search</a></li>
+                        <li><a href="/launch-readiness">Launch checklist</a></li>
+                    </ul>
+                </section>
+
+                <section class="admin-action-group">
+                    <h3>System</h3>
+                    <ul>
+                        <li><a href="/admin/security">Security monitor</a></li>
+                        <li><a href="/admin/audit">Audit search</a></li>
+                        <li><a href="/admin/system-status">System status</a></li>
+                        <li><a href="/admin/account">Your sign-in email &amp; password</a></li>
+                    </ul>
+                </section>
+            </div>
+        </div>
     </div>
-    <a class="btn btn-primary" href="/launch-readiness">Launch Checklist</a>
+
+    <div class="col-lg-4">
+        <div class="content-card h-100">
+            <h2 class="h4">Your sign-in</h2>
+            <p class="mb-1">You sign in with <strong>{{ current_user.email }}</strong>.</p>
+            <p class="text-muted">Password resets are emailed to that address.</p>
+            <a class="btn btn-primary btn-block" href="/admin/account">Change sign-in email or password</a>
+            <form method="POST" action="/admin/account" class="mt-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="send_reset">
+                <button class="btn btn-outline-primary btn-block" type="submit">Email me a password reset link</button>
+            </form>
+        </div>
+
+        <div class="content-card mt-4 h-100">
+            <h2 class="h4">Email delivery</h2>
+            {% if last_email %}
+                <p class="mb-1"><strong>Last email:</strong>
+                    {{ last_email.status }}
+                    {% if last_email.recipient %} to {{ last_email.recipient }}{% endif %}
+                </p>
+                <p class="mb-1 text-muted">{{ last_email.subject or "No subject" }}
+                    {% if last_email.created_at %} &middot; {{ last_email.created_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}
+                </p>
+                {% if last_email.error %}<p class="mb-1" style="color:#a4402f;">{{ last_email.error[:220] }}</p>{% endif %}
+            {% else %}
+                <p class="mb-1">No email has been sent yet.</p>
+            {% endif %}
+            <p class="mb-3 text-muted">{{ email_sent }} sent &middot; {{ email_failed }} failed.
+                {% if not email_ready %}Set ADMIN_EMAIL and SMTP settings so password resets can be delivered.{% endif %}
+            </p>
+            <a class="btn btn-outline-primary btn-block" href="/admin/account">Email me a password reset link</a>
+            <a class="btn btn-outline-primary btn-block mt-2" href="/admin/system-status">Check email status</a>
+        </div>
+    </div>
 </section>
 
 <section class="row g-4 mt-2">
@@ -73,31 +142,6 @@
     </div>
     <div class="col-lg-5">
         <div class="content-card h-100">
-            <h2 class="h4">Quick actions</h2>
-            <div class="dashboard-actions">
-                <a href="/admin/appointments" class="btn btn-primary">Manage Appointments</a>
-                <a href="/admin/schedule" class="btn btn-outline-primary">Schedule Board</a>
-                <a href="/admin/work-queue" class="btn btn-outline-primary">Work Queue</a>
-                <a href="/admin/search" class="btn btn-outline-primary">Global Search</a>
-                <a href="/admin/reports" class="btn btn-outline-primary">Reports & Exports</a>
-                <a href="/admin/system-status" class="btn btn-outline-primary">System Status</a>
-                <a href="/admin/caregiver-conflicts" class="btn btn-outline-primary">Caregiver Conflicts</a>
-                <a href="/admin/audit" class="btn btn-outline-primary">Audit Search</a>
-                <a href="/admin/users" class="btn btn-outline-primary">Manage Users</a>
-                <a href="/admin/users/create" class="btn btn-outline-primary">Add User or Caregiver</a>
-                <a href="/admin/inquiries" class="btn btn-outline-primary">View Inquiries</a>
-                <a href="/admin/care-plans" class="btn btn-outline-primary">Care Plans</a>
-                <a href="/admin/applications" class="btn btn-outline-primary">Applications</a>
-                <a href="/admin/messages" class="btn btn-outline-primary">Portal Messages</a>
-                <a href="/admin/security" class="btn btn-outline-primary">Security Monitor</a>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="row g-4 mt-2">
-    <div class="col-lg-7">
-        <div class="content-card h-100">
             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
                 <h2 class="h4 mb-0">Recent caregiver applications</h2>
                 <a class="btn btn-outline-primary btn-sm" href="/admin/applications">View All</a>
@@ -117,7 +161,10 @@
             {% endif %}
         </div>
     </div>
-    <div class="col-lg-5">
+</section>
+
+<section class="row g-4 mt-2">
+    <div class="col-lg-7">
         <div class="content-card h-100">
             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
                 <h2 class="h4 mb-0">Recent account registrations</h2>
@@ -138,6 +185,13 @@
             {% endif %}
         </div>
     </div>
+    <div class="col-lg-5">
+        <div class="content-card h-100">
+            <h2 class="h4">Production status</h2>
+            <p class="text-muted">Email is {% if email_ready %}configured{% else %}not configured yet{% endif %}.</p>
+            <a class="btn btn-outline-primary btn-block" href="/launch-readiness">Launch Checklist</a>
+        </div>
+    </div>
 </section>
 
 <section class="row g-4 mt-2">
@@ -153,4 +207,3 @@
 </section>
 
 {% endblock %}
-

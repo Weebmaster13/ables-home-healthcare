@@ -11,7 +11,7 @@
     <p>Local support for families looking for dependable personal care, companionship, respite, and daily living assistance.</p>
     <div class="hero-actions">
         <a class="btn btn-primary btn-lg" href="/free-consultation">Check Availability</a>
-        <a class="btn btn-light btn-lg" href="tel:+13014553030">Call Now</a>
+        <a class="btn btn-light btn-lg" href="tel:+13013262225">Call Now</a>
     </div>
 </div>
 
@@ -27,9 +27,15 @@
 
             <div class="area-list mt-4">
                 {% for area in service_areas %}
+                    {% if area == "Montgomery County" %}
+                    <span class="area-primary">{{ area }}<em>Main area</em></span>
+                    {% else %}
                     <span>{{ area }}</span>
+                    {% endif %}
                 {% endfor %}
             </div>
+            <p class="mt-3 mb-0"><strong>Montgomery County</strong> is our main service area. Call the office to
+                confirm availability for your exact address.</p>
         </div>
     </div>
     <div class="col-lg-7">
@@ -38,8 +44,9 @@
             <h2>Call Today To Confirm Care Availability.</h2>
             <p>Care placement depends on service type, schedule, caregiver availability, location, and client needs.</p>
             <ul class="check-list">
+                <li><strong>Montgomery County</strong> &mdash; our main service area</li>
                 <li>Anne Arundel, Baltimore, Calvert, Caroline, Carroll, Charles, and Frederick</li>
-                <li>Harford, Howard, Kent, Montgomery, Prince Georges, Queen Anne's, St. Mary's, and Talbot</li>
+                <li>Harford, Howard, Kent, Prince Georges, Queen Anne's, St. Mary's, and Talbot</li>
                 <li>Baltimore City</li>
             </ul>
         </div>

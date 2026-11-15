@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Sign-In Settings | Ables Home Healthcare{% endblock %}
+{% block extra_head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+
+{% block content %}
+<div class="page-hero simple-hero">
+    <span class="eyebrow">Administrator</span>
+    <h1>Sign-in settings</h1>
+    <p>Use the email address you want to sign in with, and keep your password under your control.</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="content-card h-100">
+            <h2 class="h4">Sign-in email address</h2>
+            <form method="POST" class="contact-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="form-group">
+                    <label class="form-label" for="adminEmail">Sign-in email address</label>
+                    <input id="adminEmail" name="email" type="email" class="form-control" required
+                           autocomplete="username" value="{{ user.email }}">
+                    <div class="form-text">
+                        You currently sign in with <strong>{{ user.email }}</strong>.
+                        Use a personal address (for example a Gmail) if you want password
+                        resets to arrive in your own inbox.
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" type="submit">Save sign-in email</button>
+                <a class="btn btn-outline-primary" href="/change-password">Change password</a>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="content-card h-100">
+            <h2 class="h4">Forgot your password?</h2>
+            <p class="text-muted">We email a one-hour reset link to your sign-in address.</p>
+            <form method="POST" action="/admin/account">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="send_reset">
+                <button class="btn btn-outline-primary btn-block" type="submit">Email me a reset link</button>
+            </form>
+            <p class="mt-3 mb-0"><a href="/auth/forgot-password">Use the public reset form</a></p>
+        </div>
+
+        <div class="content-card mt-4 h-100">
+            <h2 class="h4">Account details</h2>
+            <p class="mb-1">Name: {{ user.name }}</p>
+            <p class="mb-1">Role: {{ user.role }}</p>
+            <p class="mb-0">Password resets are sent to {{ user.email }}.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

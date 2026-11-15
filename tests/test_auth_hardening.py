@@ -206,3 +206,99 @@ def test_login_regenerates_session():
             from models import User as UserModel
             UserModel.query.filter_by(id=uid).delete()
             db_ext.session.commit()
+
+
+def _dev_reset_path(client, email):
+    client.post("/auth/forgot-password", data={"email": email},
+                follow_redirects=False)
+    with client.session_transaction() as session:
+        dev_url = session.get("dev_password_reset_url")
+    assert dev_url, "dev reset URL expected without SMTP"
+    from urllib.parse import urlparse
+    return urlparse(dev_url).path
+
+
+def test_stale_version_token_rejected():
+    """A token bound to an older version fails after a concurrent bump."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        from test_core_features import create_user as make_user
+        user, _ = make_user("client")
+        email, uid = user.email, user.id
+    try:
+        with app.test_client() as client:
+            path = _dev_reset_path(client, email)
+            with app.app_context():
+                from extensions import db as db_ext
+                from models import User as UserModel
+                row = db_ext.session.get(UserModel, uid)
+                row.reset_token_version = (row.reset_token_version or 0) + 1
+                db_ext.session.commit()
+            response = client.post(path, data={
+                "password": "StaleVersion2026!",
+                "confirm_password": "StaleVersion2026!",
+            }, follow_redirects=False)
+            assert response.status_code == 302
+            assert "/auth/forgot-password" in response.headers["Location"]
+    finally:
+        with app.app_context():
+            from extensions import db as db_ext
+            from models import User as UserModel
+            UserModel.query.filter_by(id=uid).delete()
+            db_ext.session.commit()
+
+
+def test_concurrent_replay_allows_exactly_one_use():
+    """Two simultaneous POSTs of one token: exactly one succeeds."""
+    import threading
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        from test_core_features import create_user as make_user
+        user, _ = make_user("client")
+        email, uid = user.email, user.id
+    try:
+        with app.test_client() as probe:
+            path = _dev_reset_path(probe, email)
+        gate = threading.Barrier(2)
+        outcomes = []
+
+        def attempt(tag):
+            with app.test_client() as client:
+                gate.wait(timeout=15)
+                response = client.post(path, data={
+                    "password": f"RaceWin2026-{tag}!",
+                    "confirm_password": f"RaceWin2026-{tag}!",
+                }, follow_redirects=False)
+                outcomes.append(response.headers.get("Location", ""))
+
+        threads = [threading.Thread(target=attempt, args=(i,))
+                   for i in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+        assert len(outcomes) == 2
+        wins = [u for u in outcomes if u.endswith("/auth/login")]
+        used = [u for u in outcomes if "forgot-password" in u]
+        assert len(wins) == 1, outcomes
+        assert len(used) == 1, outcomes
+    finally:
+        with app.app_context():
+            from extensions import db as db_ext
+            from models import User as UserModel
+            UserModel.query.filter_by(id=uid).delete()
+            db_ext.session.commit()
+
+
+def test_migration_chain_includes_token_version():
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+    from pathlib import Path
+    base = Path("migrations")
+    cfg = AlembicConfig(str(base / "alembic.ini"))
+    cfg.set_main_option("script_location", str(base))
+    heads = ScriptDirectory.from_config(cfg).get_heads()
+    assert heads == ["9f3c1a72b84d"]
+    from models import User as UserModel
+    assert "reset_token_version" in UserModel.__table__.columns
+    assert UserModel.__table__.columns["reset_token_version"].default.arg == 0

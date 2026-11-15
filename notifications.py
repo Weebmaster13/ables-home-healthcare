@@ -4,6 +4,7 @@ from html import escape
 import base64
 import re
 import smtplib
+import ssl
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -69,9 +70,9 @@ def send_email_notification(to_email, subject, body, reply_to=None, related_type
 
     try:
         mail_port = int(app.config.get("MAIL_PORT", 587))
-        with smtplib.SMTP(mail_server, mail_port) as smtp:
+        with smtplib.SMTP(mail_server, mail_port, timeout=20) as smtp:
             if app.config.get("MAIL_USE_TLS"):
-                smtp.starttls()
+                smtp.starttls(context=ssl.create_default_context())
 
             username = app.config.get("MAIL_USERNAME")
             password = app.config.get("MAIL_PASSWORD")

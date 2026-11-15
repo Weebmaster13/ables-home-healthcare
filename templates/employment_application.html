@@ -11,7 +11,7 @@
 {% if blocked_application %}
 <div class="alert alert-warning">
     This application is for CNA, LPN, and RN caregivers right now. Please call the office at
-    <a href="tel:+13014553030">301-455-3030</a> so we can review your situation.
+    <a href="tel:+13013262225">301-326-2225</a> so we can review your situation.
 </div>
 {% endif %}
 
@@ -19,24 +19,24 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row g-3">
         <div class="col-md-6">
-            <label class="form-label">Full Name</label>
-            <input name="name" class="form-control" required>
+            <label class="form-label" for="name">Full Name</label>
+            <input name="name" id="name" class="form-control" required>
         </div>
         <div class="col-md-6">
-            <label class="form-label">Email</label>
-            <input name="email" type="email" class="form-control" required>
+            <label class="form-label" for="email">Email</label>
+            <input name="email" id="email" type="email" class="form-control" required>
         </div>
         <div class="col-md-6">
-            <label class="form-label">Phone</label>
-            <input name="phone" class="form-control" required>
+            <label class="form-label" for="phone">Phone</label>
+            <input name="phone" id="phone" class="form-control" required>
         </div>
         <div class="col-12">
-            <label class="form-label">Address</label>
-            <input name="address" class="form-control">
+            <label class="form-label" for="address">Address</label>
+            <input name="address" id="address" class="form-control">
         </div>
         <div class="col-md-6">
-            <label class="form-label">Are you a CNA, LPN, or RN?</label>
-            <select name="credential_type" class="form-select" required>
+            <label class="form-label" for="credential_type">Are you a CNA, LPN, or RN?</label>
+            <select name="credential_type" id="credential_type" class="form-select" required>
                 <option value="">Choose one</option>
                 <option>CNA</option>
                 <option>LPN</option>
@@ -46,44 +46,44 @@
             </select>
         </div>
         <div class="col-md-6">
-            <label class="form-label">Availability</label>
-            <input name="availability" class="form-control" placeholder="Weekdays, evenings, weekends">
+            <label class="form-label" for="availability">Availability</label>
+            <input name="availability" id="availability" class="form-control" placeholder="Weekdays, evenings, weekends">
         </div>
         <div class="col-md-6">
-            <label class="form-label">Years of Experience</label>
-            <input name="years_experience" class="form-control" placeholder="2 years, 5+ years, new caregiver">
+            <label class="form-label" for="years_experience">Years of Experience</label>
+            <input name="years_experience" id="years_experience" class="form-control" placeholder="2 years, 5+ years, new caregiver">
         </div>
         <div class="col-md-6">
-            <label class="form-label">Weekday Availability</label>
-            <input name="weekday_availability" class="form-control" placeholder="Monday-Friday mornings, evenings, overnight">
+            <label class="form-label" for="weekday_availability">Weekday Availability</label>
+            <input name="weekday_availability" id="weekday_availability" class="form-control" placeholder="Monday-Friday mornings, evenings, overnight">
         </div>
         <div class="col-md-6">
-            <label class="form-label">Weekend Availability</label>
-            <input name="weekend_availability" class="form-control" placeholder="Saturday, Sunday, flexible">
+            <label class="form-label" for="weekend_availability">Weekend Availability</label>
+            <input name="weekend_availability" id="weekend_availability" class="form-control" placeholder="Saturday, Sunday, flexible">
         </div>
         <div class="col-12">
-            <label class="form-label">Certifications or License Details</label>
-            <input name="certifications" class="form-control" placeholder="CNA, LPN, RN, CPR, First Aid, license number if available">
+            <label class="form-label" for="certifications">Certifications or License Details</label>
+            <input name="certifications" id="certifications" class="form-control" placeholder="CNA, LPN, RN, CPR, First Aid, license number if available">
         </div>
         <div class="col-md-6">
-            <label class="form-label">Transportation</label>
-            <select name="transportation" class="form-select">
+            <label class="form-label" for="transportation">Transportation</label>
+            <select name="transportation" id="transportation" class="form-select">
                 <option>Reliable personal transportation</option>
                 <option>Public transportation</option>
                 <option>Needs route coordination</option>
             </select>
         </div>
         <div class="col-md-6">
-            <label class="form-label">Preferred Service Areas</label>
-            <input name="preferred_service_areas" class="form-control" placeholder="Baltimore City, Montgomery County, Anne Arundel, Howard">
+            <label class="form-label" for="preferred_service_areas">Preferred Service Areas</label>
+            <input name="preferred_service_areas" id="preferred_service_areas" class="form-control" placeholder="Baltimore City, Montgomery County, Anne Arundel, Howard">
         </div>
         <div class="col-12">
-            <label class="form-label">References</label>
-            <textarea name="applicant_references" class="form-control" rows="3" placeholder="Names, relationship, and phone/email if available"></textarea>
+            <label class="form-label" for="applicant_references">References</label>
+            <textarea name="applicant_references" id="applicant_references" class="form-control" rows="3" placeholder="Names, relationship, and phone/email if available"></textarea>
         </div>
         <div class="col-12">
-            <label class="form-label">Caregiving Experience</label>
-            <textarea name="experience" class="form-control" rows="5" required></textarea>
+            <label class="form-label" for="experience">Caregiving Experience</label>
+            <textarea name="experience" id="experience" class="form-control" rows="5" required></textarea>
         </div>
         <div class="col-12">
             <div class="application-requirements">
@@ -108,8 +108,8 @@
             </div>
         </div>
         <div class="col-12">
-            <label class="form-label">Resume, Certification, Or Requirement File</label>
-            <input name="resume" type="file" class="form-control" accept=".pdf,.doc,.docx,.txt">
+            <label class="form-label" for="resume">Resume, Certification, Or Requirement File</label>
+            <input name="resume" id="resume" type="file" class="form-control" accept=".pdf,.doc,.docx,.txt">
             <div class="form-text">Maximum file size: {{ max_upload_mb }} MB. Accepted files: PDF, DOC, DOCX, TXT.</div>
         </div>
         <div class="col-12">

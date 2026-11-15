@@ -196,3 +196,38 @@ def test_inventory_skips_symlinks(tmp_path):
     assert error is None
     assert manifest["skipped_symlinks_count"] == 1
     assert [f["path"] for f in manifest["files"]] == ["real.txt"]
+
+
+def test_manifest_rejects_unsafe_and_malformed_entries(tmp_path):
+    import verify_backup_manifest
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "ok.txt").write_bytes(b"ok")
+    manifest = {"files": [
+        {"path": "ok.txt", "bytes": 2,
+         "sha256": verify_backup_manifest.sha256_of(src / "ok.txt")},
+        {"path": "../escape.txt", "bytes": 2, "sha256": "x" * 64},
+        {"path": "/abs/path.txt", "bytes": 2, "sha256": "x" * 64},
+        {"path": "nohash.txt"},
+        "not-a-dict",
+    ]}
+    results = dict((m, lv) for lv, m in
+                   verify_backup_manifest.verify(manifest, src))
+    assert results["OK ok.txt"] == "PASS"
+    assert any("UNSAFE" in m and lv == "FAIL" for m, lv in results.items())
+    assert any("MALFORMED" in m and lv == "FAIL"
+               for m, lv in results.items())
+
+
+def test_restore_verify_rejects_broken_checklist(tmp_path):
+    manifest, _, src = _stage(tmp_path)
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json")
+    assert restore_verify.main(
+        [str(manifest), "--dir", str(src), "--checklist", str(broken),
+         "--confirm-disposable"]) == 1
+    wrong = tmp_path / "wrong.json"
+    wrong.write_text('{"hello": 1}')
+    assert restore_verify.main(
+        [str(manifest), "--dir", str(src), "--checklist", str(wrong),
+         "--confirm-disposable"]) == 1
