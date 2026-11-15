@@ -1741,8 +1741,7 @@ def health_detail_checks():
     """Extended health checks consumed by the launch checklist page."""
     checks = _core_health_checks()
     checks["site_base_url"] = (
-        "ok" if current_app.config["SITE_BASE_URL"].startswith("https://")
-        or current_app.config["SITE_BASE_URL"].startswith("http://127.0.0.1")
+        "ok" if (current_app.config.get("SITE_BASE_URL") or "").startswith(("https://", "http://127.0.0.1"))
         else "warning"
     )
     mail_keys = {
@@ -2416,7 +2415,7 @@ def admin_system_status():
 @login_required
 def admin_launch_checklist():
     require_permission("admin:reports")
-    health = health_detail_checks()
+    checks = health_detail_checks()
     BACKUP_DIR.mkdir(exist_ok=True)
     backups = [path for path in BACKUP_DIR.iterdir() if path.is_file()]
     test_inquiries = Inquiry.query.filter(
@@ -2442,14 +2441,14 @@ def admin_launch_checklist():
         },
         {
             "label": "SMTP tested",
-            "ready": health["checks"].get("smtp") == "ok",
-            "detail": "Email settings are configured." if health["checks"].get("smtp") == "ok" else "Configure and test SMTP before launch.",
+            "ready": checks.get("smtp") == "ok",
+            "detail": "Email settings are configured." if checks.get("smtp") == "ok" else "Configure and test SMTP before launch.",
             "href": url_for("main.admin_system_status"),
         },
         {
             "label": "PostgreSQL active",
-            "ready": health["checks"].get("database_backend") == "postgresql",
-            "detail": f"Database backend: {health['checks'].get('database_backend', 'unknown')}.",
+            "ready": checks.get("database_backend") == "postgresql",
+            "detail": f"Database backend: {checks.get('database_backend', 'unknown')}.",
             "href": url_for("main.admin_system_status"),
         },
         {

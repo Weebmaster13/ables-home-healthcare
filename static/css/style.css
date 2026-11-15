@@ -4,6 +4,8 @@
    for grid/utilities only; all components are custom so pages do not look generic.
    Every public template inherits this file via base.html. Legacy class names are
    all styled so admin/portal pages keep working. */
+html, body { overflow-x: clip; }
+
 :root {
   --pine: #0f5dab;
   --pine-deep: #0c4474;
@@ -473,6 +475,41 @@ button, .btn { min-height: 44px; }
 .availability-grid, .search-result-grid, .launch-status-grid, .readiness-grid, .standards-grid,
 .career-standards-grid, .company-page-grid, .values-grid, .requirement-check-grid { display: grid; gap: 14px; }
 @media (min-width: 760px) { .dashboard-stats, .report-grid { grid-template-columns: repeat(3, 1fr); } .queue-grid, .portal-feature-grid { grid-template-columns: repeat(2, 1fr); } }
+/* Admin toolbars and search forms */
+.table-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.table-search { width: auto; max-width: 280px; min-height: 44px; }
+.admin-search-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.admin-search-form .form-control { flex: 1 1 240px; }
+.admin-search-form .form-select { flex: 0 0 auto; width: auto; min-width: 160px; }
+
+/* Stat tiles: label above the number */
+.stat-card { display: block; }
+.stat-card span { display: block; color: var(--muted); font-size: 0.74rem; letter-spacing: 0.09em; text-transform: uppercase; font-weight: 700; margin-bottom: 6px; }
+.stat-card strong { display: block; font-family: var(--font-display); font-size: 2.1rem; line-height: 1.1; color: var(--pine-ink); font-weight: 600; }
+a.stat-card.stat-link { text-decoration: none; }
+a.stat-card.stat-link strong { color: var(--pine); }
+a.stat-card.stat-link:hover { border-color: var(--pine); box-shadow: 0 0 0 3px rgba(11, 79, 138, 0.14); }
+a.stat-card.stat-link:focus-visible { outline: 2px solid var(--pine); outline-offset: 2px; }
+
+/* Brochure page (print-friendly view of the brand) */
+.brochure-strip { background: var(--pine-ink); color: #fff; }
+.brochure-strip .container { row-gap: 10px; }
+.strip-logo { height: 54px; width: auto; max-width: 100%; object-fit: contain; }
+.strip-brand { min-width: 0; flex-wrap: wrap; }
+.strip-brand > div { min-width: 0; }
+.strip-label { font-family: var(--font-display); color: #fff; margin: 0; font-size: 1.15rem; }
+.strip-tagline { color: #a9c1d6; font-size: 0.84rem; margin: 0; overflow-wrap: break-word; }
+.strip-cta-label { color: var(--gold); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; font-weight: 700; margin: 0 0 2px; }
+.strip-phone { color: #fff; text-decoration: none; font-weight: 800; font-size: 1.3rem; white-space: nowrap; }
+.strip-phone:hover { color: var(--gold); }
+.brochure-hero .brochure-logo { width: 200px; max-width: 62%; height: auto; margin-inline: auto; }
+.brochure-subtitle { color: var(--muted); font-size: 1.02rem; max-width: 720px; margin-inline: auto; }
+.brochure-contact strong { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; }
+.brochure-list { margin: 0; color: var(--pine-ink); line-height: 1.9; }
+.brochure-list li { padding: 6px 10px; border-bottom: 1px solid var(--sand); }
+.brochure-list li:last-child { border-bottom: none; }
+.brochure-areas h2, .brochure-services h2, .brochure-footer h2 { color: var(--pine-ink); }
+
 .values-grid { gap: 0; border-top: 1px solid var(--line); margin-top: 16px; }
 .values-grid .value-item { border: none; border-bottom: 1px solid var(--line); border-radius: 0; padding: 20px 4px; }
 .career-standards-grid .career-standard strong { font-family: var(--font-display); color: var(--pine-ink); display: block; margin-bottom: 4px; }
@@ -516,12 +553,15 @@ button, .btn { min-height: 44px; }
 .goog-te-banner-frame, .skiptranslate, #goog-gt-tt, .goog-te-balloon-frame { display: none !important; }
 
 /* ---------- Floating widgets ---------- */
-.quick-chat-widget { position: fixed; right: 16px; bottom: 16px; z-index: 960; display: grid; gap: 8px; justify-items: end; }
+.quick-chat-widget { position: fixed; right: 16px; bottom: 76px; z-index: 960; display: grid; gap: 8px; justify-items: end; }
 .quick-chat-toggle { background: var(--pine-ink); color: #fff; border: none; border-radius: 8px; padding: 13px 22px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow); min-height: 48px; }
 .quick-chat-panel { width: min(330px, 90vw); background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 10px; box-shadow: var(--shadow); }
 .quick-chat-panel label { display: grid; gap: 4px; font-size: 0.88rem; }
-.cookie-banner { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 970; max-width: 720px; margin-inline: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; gap: 14px; align-items: center; box-shadow: var(--shadow); }
-.cookie-banner p { margin: 6px 0 0; font-size: 0.9rem; }
+.cookie-banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 970; max-width: none; margin: 0; background: var(--paper); border-top: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 12px; align-items: center; justify-content: center; box-shadow: 0 -2px 14px rgba(16, 41, 74, 0.12); font-size: 0.84rem; }
+.cookie-banner p { margin: 2px 0 0; font-size: 0.82rem; line-height: 1.45; }
+.cookie-banner > strong { white-space: nowrap; }
+.cookie-banner > div { max-width: 720px; }
+@media (max-width: 560px) { .quick-chat-widget { bottom: 150px; } .cookie-banner { flex-direction: column; gap: 8px; text-align: center; } .cookie-banner > strong { white-space: normal; } }
 
 /* ---------- Sign-in page ---------- */
 .auth-shell { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); gap: 24px; align-items: start; }
@@ -540,8 +580,7 @@ button, .btn { min-height: 44px; }
 /* ---------- Scroll reveal motion ---------- */
 .reveal-ready [data-reveal] { opacity: 0; transform: translateY(30px); transition: opacity .8s cubic-bezier(.22, .68, .28, 1), transform .8s cubic-bezier(.22, .68, .28, 1); will-change: opacity, transform; }
 .reveal-ready [data-reveal].is-visible { opacity: 1; transform: none; }
-.reveal-ready [data-reveal="left"] { transform: translateX(-34px); }
-.reveal-ready [data-reveal="right"] { transform: translateX(34px); }
+.reveal-ready [data-reveal="left"], .reveal-ready [data-reveal="right"] { transform: translateY(30px); }
 .reveal-ready [data-reveal="scale"] { transform: scale(.94); }
 .reveal-ready [data-reveal].is-visible { transform: none; }
 /* Hero copy and cards arrive on load */
