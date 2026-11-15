@@ -348,18 +348,6 @@
 
             </div>
 
-            {% if readiness_items %}
-            <div class="dash-readiness-row">
-                {% for item in readiness_items[:3] %}
-                <div class="dash-card dash-readiness-card">
-                    <span>{{ item.status }}</span>
-                    <h2>{{ item.title }}</h2>
-                    <p>{{ item.body }}</p>
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-
         </div>
     </div>
 

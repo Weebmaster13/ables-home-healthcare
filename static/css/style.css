@@ -756,12 +756,6 @@ button, .btn { min-height: 44px; }
 .dash-profile-email { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 6px; word-break: break-word; }
 .dash-readiness { text-align: center; }
 
-/* ---------- Readiness cards ---------- */
-.dash-readiness-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 18px; }
-.dash-readiness-card span { display: inline-block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gold); border: 1px solid var(--gold-soft); border-radius: 999px; padding: 3px 10px; margin-bottom: 8px; }
-.dash-readiness-card h2 { font-size: 1rem; color: var(--pine); margin: 0 0 6px; }
-.dash-readiness-card p { color: var(--muted); font-size: 0.82rem; margin: 0; }
-
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
   .dash-shell { grid-template-columns: 1fr; }
@@ -775,7 +769,6 @@ button, .btn { min-height: 44px; }
   .dash-panels { grid-template-columns: 1fr; }
   .dash-ring-card { grid-column: span 1; }
   .dash-action-groups { grid-template-columns: repeat(2, 1fr); }
-  .dash-readiness-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .dash-stats { grid-template-columns: 1fr 1fr; }
