@@ -247,11 +247,11 @@ def register_security_headers(app):
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://translate.google.com https://translate.googleapis.com; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://translate.googleapis.com https://translate.google.com https://www.gstatic.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://translate.googleapis.com https://translate-pa.googleapis.com https://www.gstatic.com; "
             "img-src 'self' data: https:; "
             "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
-            "connect-src 'self' https://translate.googleapis.com https://translate.google.com; "
+            "connect-src 'self' https://translate.googleapis.com https://translate.google.com https://translate-pa.googleapis.com; "
             "frame-src 'self' https://translate.google.com; "
             "frame-ancestors 'self'; "
             "base-uri 'self'; "
