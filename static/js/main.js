@@ -1024,8 +1024,18 @@
         }
         var header = document.getElementById("siteHeader");
         if (header) {
+            var headerBottom = header.querySelector(".header-bottom");
+            var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
             var onScroll = function () {
                 header.classList.toggle("is-scrolled", window.scrollY > 8);
+                if (!prefersReducedMotion) {
+                    header.classList.toggle("is-nav-hidden", window.scrollY > 90);
+                } else {
+                    header.classList.remove("is-nav-hidden");
+                }
+                if (headerBottom) {
+                    headerBottom.classList.toggle("is-hidden", window.scrollY > 90 && !prefersReducedMotion);
+                }
             };
             window.addEventListener("scroll", onScroll, { passive: true });
             onScroll();

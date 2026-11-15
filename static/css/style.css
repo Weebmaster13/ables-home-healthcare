@@ -787,3 +787,15 @@ button, .btn { min-height: 44px; }
   .dash-sidebar, .dash-topbar { display: none !important; }
   .dash-shell, .dash-grid { display: block; }
 }
+
+
+/* ---------- Scroll-hide nav row (logo stays visible) ---------- */
+.header-bottom { max-height: 90px; overflow: hidden; transition: max-height .28s ease, padding .28s ease, opacity .2s ease; }
+.header-bottom.is-hidden { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .header-bottom { transition: none !important; }
+  .header-bottom.is-hidden { max-height: 90px !important; overflow: visible !important; opacity: 1 !important; padding-top: 2px !important; padding-bottom: 2px !important; }
+}
+@media print {
+  .header-bottom.is-hidden { max-height: 90px !important; overflow: visible !important; opacity: 1 !important; }
+}
