@@ -1,6 +1,8 @@
 (function () {
     const body = document.body;
-    const isAuthenticated = body.dataset.authenticated === "true";
+    // PHI-bearing portal pages must never send text to Google. Public marketing
+    // pages translate for everyone; the flag is set server-side by base.html.
+    const isPortalPage = body.dataset.phiPage === "true";
 
     // localStorage can throw in private/incognito or when storage is blocked.
     function lsGet(key) {
@@ -422,59 +424,12 @@
             }
         };
 
-        function setTranslateCookie(language) {
-            const targetLanguage = googleLanguageCodes[language];
-            const cookieValue = targetLanguage ? "/en/" + targetLanguage : "/en/en";
-            const expired = "expires=Thu, 01 Jan 1970 00:00:00 GMT";
-
-            if (!targetLanguage) {
-                document.cookie = "googtrans=;path=/;" + expired;
-                document.cookie = "googtrans=;domain=" + window.location.hostname + ";path=/;" + expired;
-                return;
-            }
-
-            document.cookie = "googtrans=" + cookieValue + ";path=/";
-            if (window.location.hostname.indexOf(".") !== -1) {
-                document.cookie = "googtrans=" + cookieValue + ";domain=" + window.location.hostname + ";path=/";
-            }
-        }
-
-        function triggerFullPageTranslation(language, attempt) {
-            const targetLanguage = googleLanguageCodes[language];
-            const combo = document.querySelector(".goog-te-combo");
-
-            if (language === "en") {
-                setTranslateCookie("en");
-                return;
-            }
-
-            if (!targetLanguage) {
-                return;
-            }
-
-            setTranslateCookie(language);
-
-            if (!combo) {
-                if (attempt < 20) {
-                    window.setTimeout(function () {
-                        triggerFullPageTranslation(language, attempt + 1);
-                    }, 250);
-                }
-                return;
-            }
-
-            if (combo.value !== targetLanguage) {
-                combo.value = targetLanguage;
-                combo.dispatchEvent(new Event("change"));
-            }
-        }
-
         function shouldSkipTranslationNode(element) {
             if (!element || blockedTranslateTags.has(element.tagName)) {
                 return true;
             }
 
-            return !!element.closest(".notranslate, .translation-engine, #google_translate_element, .goog-te-banner-frame");
+            return !!element.closest(".notranslate, .goog-te-banner-frame");
         }
 
         function rememberOriginals(root) {
@@ -719,7 +674,6 @@
                 languageMessage.textContent = dictionary.message || translations.en.message;
             }
 
-            triggerFullPageTranslation(language, 0);
             translatePageDirect(language).then(function () {
                 if (languageMessage && googleLanguageCodes[language]) {
                     languageMessage.textContent = (languageNames[language] || "Language") + " selected. The page has been translated.";
@@ -731,37 +685,17 @@
             });
         }
 
-        window.googleTranslateElementInit = function () {
-            const target = document.getElementById("google_translate_element");
-            if (!target || !window.google || !window.google.translate) {
-                return;
-            }
-
-            new window.google.translate.TranslateElement(
-                {
-                    pageLanguage: "en",
-                    includedLanguages: "es,fr,am,sw,ar,so,pt",
-                    autoDisplay: false
-                },
-                "google_translate_element"
-            );
-
-            if (!isAuthenticated) {
-                triggerFullPageTranslation(lsGet("ables-language") || "en", 0);
-            }
-        };
-
         const savedLanguage = lsGet("ables-language") || "en";
         rememberOriginals(document.body);
 
-        if (isAuthenticated) {
+        if (isPortalPage) {
             // Portal/admin pages can contain PHI. Never send that text to
-            // Google automatically; the signed-in main content is also
+            // Google automatically; the portal main content is also
             // marked .notranslate server-side.
             languageSelect.value = "en";
             languageSelect.disabled = true;
             if (languageMessage) {
-                languageMessage.textContent = "Translation is off while you are signed in.";
+                languageMessage.textContent = "Translation is off on this signed-in page for your privacy.";
             }
         } else {
             languageSelect.value = savedLanguage;

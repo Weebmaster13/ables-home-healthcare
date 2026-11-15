@@ -57,10 +57,12 @@
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}">
     <link rel="shortcut icon" href="/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+    {% set request_path = request.path if request else '' %}
+    {% set is_portal_page = request_path.startswith('/admin') or request_path.startswith('/administrator') or request_path.startswith('/dashboard') or request_path.startswith('/portal') or request_path.startswith('/auth') or request_path.startswith('/messages') or request_path.startswith('/profile') or request_path.startswith('/documents') or request_path.startswith('/caregiver/') %}
     {% block extra_head %}{% endblock %}
 </head>
 
-<body data-authenticated="{% if current_user.is_authenticated %}true{% else %}false{% endif %}">
+<body data-authenticated="{% if current_user.is_authenticated %}true{% else %}false{% endif %}" data-phi-page="{{ 'true' if is_portal_page else 'false' }}">
 <a class="skip-link" href="#mainContent">Skip to main content</a>
 
 <header class="site-header" id="siteHeader">
@@ -139,7 +141,7 @@
 </header>
 
 <div class="page-shell">
-  <main id="mainContent"{% if current_user.is_authenticated %} class="notranslate"{% endif %}>
+  <main id="mainContent"{% if is_portal_page %} class="notranslate"{% endif %}>
     <div class="container-fluid site-container py-4">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -241,7 +243,6 @@
           <option value="zh">Chinese</option>
           <option value="pt">Portuguese</option>
         </select>
-        <div id="google_translate_element" class="translation-engine" aria-hidden="true"></div>
       </div>
     </div>
   </footer>
@@ -281,6 +282,5 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}?v={{ asset_version('js/main.js') }}"></script>
-<script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 </body>
 </html>
