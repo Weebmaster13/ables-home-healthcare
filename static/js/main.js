@@ -1034,7 +1034,7 @@
                 counters.set(parent, index + 1);
                 var direction = index % 3 === 1 ? "left" : (index % 3 === 2 ? "right" : "");
                 el.setAttribute("data-reveal", direction);
-                el.style.transitionDelay = Math.min(index * 80, 400) + "ms";
+                el.style.transitionDelay = Math.min(index * 70, 340) + "ms";
             });
         }
 
