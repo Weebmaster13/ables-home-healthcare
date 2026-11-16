@@ -63,6 +63,13 @@
 </head>
 
 <body data-authenticated="{% if current_user.is_authenticated %}true{% else %}false{% endif %}" data-phi-page="{{ 'true' if is_portal_page else 'false' }}">
+<div class="top-utility" role="region" aria-label="Office hours and phone number">
+  <div class="site-container top-utility-inner">
+    <span>Questions? Call <a href="tel:+13013262225"><strong>301-326-2225</strong></a> &middot; After hours: 301-455-3030</span>
+    <span class="top-utility-right">Mon&ndash;Fri 9AM&ndash;6PM &middot; Sat&ndash;Sun 10AM&ndash;4PM &middot; <a href="mailto:admin@ableshomehealthcare.com">Email us</a></span>
+  </div>
+</div>
+
 <a class="skip-link" href="#mainContent">Skip to main content</a>
 
 <header class="site-header" id="siteHeader">
@@ -139,6 +146,14 @@
     </div>
   </div>
 </header>
+
+<div class="license-strip" role="note" aria-label="Company license">
+  <div class="site-container license-strip-inner">
+    <span>RSA</span>
+    <span>Licensed by Maryland Department of Health</span>
+    <span>R3114</span>
+  </div>
+</div>
 
 <div class="page-shell">
   <main id="mainContent"{% if is_portal_page %} class="notranslate"{% endif %}>
