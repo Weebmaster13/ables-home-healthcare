@@ -1043,11 +1043,15 @@
         // stuck invisible if the observer is throttled.
         function revealInView() {
             var height = window.innerHeight || 800;
+            // If the page is so short it cannot scroll, reveal everything
+            // up front so nothing is ever stuck invisible.
+            var doc = document.documentElement;
+            var shortPage = (doc.scrollHeight || 0) <= height + 120;
             for (var i = 0; i < nodes.length; i++) {
                 var el = nodes[i];
                 if (el.classList.contains("is-visible")) { continue; }
                 var rect = el.getBoundingClientRect();
-                if (rect.top < height * 0.92) {
+                if (shortPage || rect.top < height * 1.35) {
                     el.classList.add("is-visible");
                 }
             }
