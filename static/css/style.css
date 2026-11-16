@@ -837,15 +837,7 @@ a.stat-card.stat-link:focus-visible { outline: 2px solid var(--pine); outline-of
 }
 
 /* ---------- Capital-style appeal: top utility, license strip, service tiles ---------- */
-.top-utility { background: var(--pine-ink); color: #f0ece0; font-size: 0.78rem; }
-.top-utility-inner { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-block: 7px; flex-wrap: wrap; }
-.top-utility a { color: #ffd66b; text-decoration: none; font-weight: 700; white-space: nowrap; }
-.top-utility a:hover { text-decoration: underline; text-underline-offset: 2px; }
-@media (max-width: 700px) { .top-utility-right { display: none; } }
 
-.license-strip { background: var(--pine); color: #fff; font-family: var(--font-display); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; }
-.license-strip-inner { display: flex; align-items: center; justify-content: center; gap: 16px; padding-block: 9px; text-align: center; }
-@media (max-width: 560px) { .license-strip { font-size: 0.66rem; } .license-strip-inner { gap: 10px; } }
 
 .service-tiles { margin-top: clamp(18px, 3vw, 34px); }
 .service-tile-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
